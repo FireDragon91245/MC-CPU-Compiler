@@ -1,5 +1,6 @@
 # MC-CPU-Compiler
 A Compiler for my CPU im building in Minecraft
+(And be ready for some terible python code LOL)
 
 # Current CPU Specs
 - 8 bit CPU (math, adress buss, ...)

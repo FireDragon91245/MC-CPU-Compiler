@@ -1,0 +1,9 @@
+#includemacrofile <stdinstructions>
+#macro for(%register = %number; %register < %number; %register++){
+#comment for loop
+    mov %1, %2
+    jmpsri %3, %4, __%macroid__endfor
+    incr %5
+    ...
+    __%macroid__endfor:
+#endmacro }

@@ -8,6 +8,7 @@ def list_format(to_format: list, format_str: str):
     return ', '.join([format_str]*len(to_format))
 
 
+# Compiler settings and CPU specs
 COMPILER_VERSION = "1.0-wip"
 CONTRIBUTORS_CPU = [
     "FireDragon91245"
@@ -15,6 +16,8 @@ CONTRIBUTORS_CPU = [
 CONTRIBUTORS_COMPILER = {
     "FireDragon91245"
 }
+MEMORY_SIZE = 256
+MEMORY_BLOCKS = 8
 
 
 print("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n")
@@ -23,7 +26,7 @@ print(f"Contributors CPU: {list_format(CONTRIBUTORS_CPU, '%')}")
 print(f"Contributors Compiler: {list_format(CONTRIBUTORS_COMPILER, '%')}")
 print("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n")
 
-if sys.argv.count() <= 1:
+if len(sys.argv) <= 1:
     print("No source file provided, exiting!")
     exit(0)
 

@@ -20,6 +20,7 @@ MEMORY_SIZE = 256
 MEMORY_BLOCKS = 8
 
 
+
 print("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n")
 print(f"Compiler version: {COMPILER_VERSION}\n")
 print(f"Contributors CPU: {list_format(CONTRIBUTORS_CPU, '%')}")

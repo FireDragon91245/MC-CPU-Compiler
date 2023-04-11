@@ -20,4 +20,9 @@ class MemoryManagementType(Enum):
 class Macro:
 
     def __init__(self, macro_opener: str, macro_closer: str, macro_args: list[MacroTypes], macro_top: list[str], macro_bottom: list[str], complex_macro: bool) -> object:
-        pass
+        self.complex_macro = complex_macro
+        self.macro_bottom = macro_bottom
+        self.macro_top = macro_top
+        self.macro_args = macro_args
+        self.macro_closer = macro_closer
+        self.macro_opener = macro_opener

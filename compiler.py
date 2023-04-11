@@ -2,6 +2,47 @@ from compiler_obj import MacroTypes, MemoryManagementType, Macro
 import re
 import os
 
+# %number can be equal to %label, only the compiler deals with %label & %variable and is resolved to %number at
+# compile time
+NATIVE_INSTRUCTIONS = [
+    "ADD %register, %register",  # reg a + reg b (Updates Zero, Overflow CPU flags)
+    "SUB %register, %register",  # reg a - reg b (Updates Zero, Overflow CPU flags)
+    "DIV %register, %register",  # reg a / reg b (Updates Zero, Overflow CPU flags)
+    "MULT %register, %register",  # reg a * reg b (Updates Zero, Overflow CPU flags)
+    "INC %register",  # reg a++ (Updates Overflow CPU flag)
+    "DEC %register",  # reg a-- (Updates Zero, Overflow CPU flags)
+    "CALL %number",  # JMP + PUSH number a
+    "RET",  # POP + JMP upper stack
+    "JMP %number",
+    "JMPZ %number",  # jump if Zero CPU flag is set
+    "JMPS %number",  # jump if Smaller CPU flag is set
+    "JMPB %number",  # jump if Bigger CPU flag is set
+    "JMPE %number",  # jump if Equal CPU flag is set
+    "CMP %register, %register",  # reg a == > < reg b (Updates Smaller, Bigger, Zero, Equal CPU flags)
+    "PUSH %register",  # PUSH + INC stack ptr
+    "POP %register",  # POP + DEC stack ptr
+    "CPY %register, %register",
+    "LOAD %register, %number",
+    "MCPY %address, %address",
+    "MLOAD %address, %number",
+    "MGET %register, %address",
+    "MSET %address, %register",
+    "AND %register, %register",  # (Updates Zero CPU flag)
+    "OR %register, %register",  # (Updates Zero CPU flag)
+    "NOT %register",  # (Updates Zero CPU flag)
+    "SHL %register",  # shift left (Updates Zero CPU flag)
+    "SHR %register",  # shift right (Updates Zero CPU flag)
+    "NOP",  # no operation
+    "HALT",  # disables RUNNING CPU flag and halts the cpu (RUNNING CPU flag is only enabled by the start button in MC)
+]
+TYPE_REGEX_MATCH_REPLACERS = {
+    "%register": "(&r[0-9]{1,3})",
+    "%number": "(0x[0-9A-Fa-f]{1,2}|[0-9]{1,3})",
+    "%address": r"(\*0x[0-9A-Fa-f]{1,2}|\*[0-9]{1,3})",
+    "%variable": r"(\*[a-zA-Z][a-zA-Z0-9]*)",
+    "%label": "(~[a-zA-Z][a-zA-Z0-9_-]*)",
+}
+
 
 def read_lines(file):
     lines = []
@@ -128,7 +169,8 @@ def get_imported_files(imported_files, lines, file):
                         if imported_files.get(match) is not None:
                             continue
                         imported_files[match] = read_lines(file)
-                        get_imported_files(imported_files, imported_files.get(match), curr_dir + "/macrodefs/" + match + ".mccpu")
+                        get_imported_files(imported_files, imported_files.get(match),
+                                           curr_dir + "/macrodefs/" + match + ".mccpu")
                     elif os.path.isfile(curr_dir + match):
                         file = open(curr_dir + match)
                         if not file.readable():
@@ -149,32 +191,35 @@ def get_imported_files(imported_files, lines, file):
 def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes]:
     type_reg = r"%[a-zA-Z]*"
     matches: list[str] = re.findall(type_reg, macro_opener)
-    macro_types: list[MacroTypes] = {}
+    macro_types: list[MacroTypes] = []
     for match in matches:
-        if match is "%label":
+        if match == "%label":
             macro_types.append(MacroTypes.LABEL)
-        elif match is "%variable":
+        elif match == "%variable":
             macro_types.append(MacroTypes.VARIABLE)
-        elif match is "%address":
+        elif match == "%address":
             macro_types.append(MacroTypes.MEMORY_ADDRESS)
-        elif match is "%number":
+        elif match == "%number":
             macro_types.append(MacroTypes.NUMBER)
-        elif match is "%register":
+        elif match == "%register":
             macro_types.append(MacroTypes.REGISTER)
         else:
-            print(f"[ERROR] macro \"{macro_opener}\" in file \"{file}\" at line <{line_no}> used not valid type \"{match}\" valid are [%label, %variable, %address, %number, %register]")
+            print(
+                f"[ERROR] macro \"{macro_opener}\" in file \"{file}\" at line <{line_no}> used not valid type \"{match}\" valid are [%label, %variable, %address, %number, %register]")
             return None
     return macro_types
 
 
 def load_macros(macros, file, lines: list[str]):
     macro_reg = r"#\s*macro\s*(.+)"
-    macro_end_reg = r"(#\s*macroend\s*)(.+)?"
+    macro_end_reg = r"(#\s*endmacro\s*)(.+)?"
     macro_reg_com = re.compile(macro_reg)
     macro_end_reg_com = re.compile(macro_end_reg)
     lines_iter = enumerate(lines)
     for line_no, line in lines_iter:
         matches = macro_reg_com.match(line)
+        if matches is None:
+            continue
         if len(matches.groups()) >= 1:
             macro_opener = matches.group(0)
             macro_args = get_macro_arg_types(macro_opener, file, line_no)
@@ -186,25 +231,27 @@ def load_macros(macros, file, lines: list[str]):
             currently_macro_top = True
             macro_start_line_no = line_no
             while True:
-                line_no, line = next(lines_iter, None)
-                macro_end_matches = macro_end_reg_com.match(line)
+                line_no, line = next(lines_iter, (None, None))
                 if line is None:
                     print(f"[ERROR] Expected #endmacro after #macro in file \"{file}\" at line <{macro_start_line_no}>")
                     return False
-                if line is "...":
+                macro_end_matches = macro_end_reg_com.match(line)
+                if line == "...":
                     complex_macro = True
                     currently_macro_top = False
-                elif len(macro_end_matches.groups()) >= 1:
+                elif macro_end_matches is not None and len(macro_end_matches.groups()) >= 1:
                     if complex_macro:
                         if not (len(macro_end_matches.groups()) >= 2):
                             print(f"[ERROR] Complex macros (macros using \"...\") need to have a closing expression "
                                   f"error at #endmacro in file \"{file}\" at line <{line_no}>")
                             return False
-                        macros[abs(hash(macro_opener))] = Macro(macro_opener, macro_end_matches.group(1), macro_args, macro_top,
+                        macros[abs(hash(macro_opener))] = Macro(macro_opener, macro_end_matches.group(1), macro_args,
+                                                                macro_top,
                                                                 macro_bottom, complex_macro)
                     else:
                         if len(macro_end_matches.groups()) == 1:
-                            macros[abs(hash(macro_opener))] = Macro(macro_opener, "", macro_args, macro_top, macro_bottom, complex_macro)
+                            macros[abs(hash(macro_opener))] = Macro(macro_opener, "", macro_args, macro_top,
+                                                                    macro_bottom, complex_macro)
                         else:
                             macros[abs(hash(macro_opener))] = Macro(macro_opener, macro_end_matches.group(1),
                                                                     macro_args, macro_top,
@@ -218,9 +265,73 @@ def load_macros(macros, file, lines: list[str]):
     return True
 
 
-            
+def match_instruction(inst, line) -> bool | None:
+    for t, repl in TYPE_REGEX_MATCH_REPLACERS.items():
+        inst = inst.replace(t, repl)
+
+    res = re.match(inst, line)
+    return bool(res)
 
 
+def is_only_native_instructions(curr_compile_lines: list[str]):
+    for line in curr_compile_lines:
+        if line.startswith('#'):
+            continue
+        for inst in NATIVE_INSTRUCTIONS:
+            if not match_instruction(inst, line):
+                return False
+    return True
+
+
+def resolve_args(macro_line, args):
+    for i in range(0, len(args.groups())):
+        macro_line = macro_line.replace(f"%{i}", args.group(i))
+    return macro_line
+
+
+def resolve_macro(curr_compile_lines: list[str], line_no: int, variables: dict[str, int], macro: Macro) -> int:
+    macro_pattern = macro.macro_opener
+    for t, repl in TYPE_REGEX_MATCH_REPLACERS.items():
+        macro_pattern = macro_pattern.replace(t, repl)
+    args = re.match(macro_pattern, curr_compile_lines[line_no])
+
+    if macro.complex_macro:
+        pass
+    else:
+        del curr_compile_lines[line_no]
+        for i in reversed(range(0, len(macro.macro_top))):
+            curr_compile_lines.insert(line_no, resolve_args(macro.macro_top[i], args))
+
+
+def resolve_macros(curr_compile_lines: list[str], variables: dict[str, int], macros: dict[int, Macro]) -> bool:
+    curr_indent: dict[str, int] = {}
+    for line_no in range(len(curr_compile_lines)):
+        found = False
+        for macro_no, macro in macros.items():
+            if match_instruction(macro.macro_opener, curr_compile_lines[line_no]):
+                line_no = resolve_macro(curr_compile_lines, line_no, variables, macro)
+                if line_no == -1:
+                    return False
+                found = True
+                break
+        if found:
+            continue
+        for inst in NATIVE_INSTRUCTIONS:
+            if match_instruction(inst, curr_compile_lines[line_no]):
+                found = True
+                break
+        if not found:
+            print(
+                f"[ERROR] can not resolve instruction \"{curr_compile_lines[line_no]}\" to any macro or std instruction")
+            return False
+    return True
+
+
+def write_file(file_name, curr_compile_lines):
+    file = open(file_name, "wt")
+    for line in curr_compile_lines:
+        file.write(line)
+    file.close()
 
 
 def compile_file(file_path: str):
@@ -239,9 +350,6 @@ def compile_file(file_path: str):
     if not get_imported_files(imported_files, lines, file_path):
         return
 
-    for file, lines in imported_files.items():
-        print(file)
-
     macros: dict[int, Macro] = {}
     for file, included_lines in imported_files.items():
         load_macros(macros, file, included_lines)
@@ -250,7 +358,9 @@ def compile_file(file_path: str):
 
     memory_management_type = get_memory_management_type(lines)
 
-    variable_memory_pos = {}
+    curr_compile_lines: list[str] = []
+
+    variable_memory_pos: dict[str, int] = {}
     if memory_management_type == MemoryManagementType.STATIC_BALANCED:
         find_static_memory_layout_balanced(variable_memory_pos, lines)
     elif memory_management_type == MemoryManagementType.STATIC_INCREMENTAL:
@@ -259,3 +369,16 @@ def compile_file(file_path: str):
         find_static_auto_memory_balanced(variable_memory_pos, lines)
     elif memory_management_type == MemoryManagementType.AUTO_STATIC_INCREMENTAL:
         find_static_auto_memory_incremental(variable_memory_pos, lines)
+
+    for line in lines:
+        curr_compile_lines.append(line)
+        # TODO: exlude compiler instructions from curr_compiler_line
+
+
+    while not is_only_native_instructions(curr_compile_lines):
+        if not resolve_macros(curr_compile_lines, variable_memory_pos, macros):
+            return
+
+    print("[INFO] Macros & Variables resolved, the resolved code will be saved to out.mccpu")
+
+    write_file("out.mccpu", curr_compile_lines)

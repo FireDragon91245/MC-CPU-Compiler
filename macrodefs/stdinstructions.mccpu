@@ -1,2 +1,4 @@
-#macro jmpsri %register, %number, %label
-#comment jump if smaler register intermediate label
+#macro jumpifsmaler %register, %register, %label
+CMP %0, %1
+JMPS %2
+#endmacro

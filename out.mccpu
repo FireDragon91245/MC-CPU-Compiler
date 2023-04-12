@@ -1,11 +1,14 @@
 load &r1, 10
 load &r2, 20
-loop:
-cmp &r1, &r2
-jmps ~res
-jmp ~exit
-exit:
+// begin xor &r1, &r2, &r3, &r4: 7065880377942129784, 1, xor %register, %register, %register, %register
+// &r1 xor &r2, &r3 & &r4 are temporary
+cpy &r1, &r3
+cpy &r2, &r4
+not &r3
+not &r4
+and &r1, &r4
+and &r3, &r2
+or &r1, &r3
+// end xor
+push &r1
 halt
-res:
-inc &r1
-jmp ~loop

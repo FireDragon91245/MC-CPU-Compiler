@@ -293,13 +293,15 @@ def is_only_native_instructions(curr_compile_lines: list[str]):
     return True
 
 
-def resolve_args(macro_line, args):
+def resolve_args(macro_line, args, macro: Macro, macro_id: int):
     for i in range(0, len(args.groups())):
-        macro_line = macro_line.replace(f"%{i}", args.group(i+1))
+        macro_line = macro_line.replace(f"%{i}", args.group(i+1)).replace("%__macro_id", str(macro_id)).\
+            replace("%__macro_no", str(macro.macro_no)).replace("%__macro_head", macro.macro_opener)
     return macro_line
 
 
-def resolve_macro(curr_compile_lines: list[str], line_no: int, variables: dict[str, int], macro: Macro) -> int:
+def resolve_macro(curr_compile_lines: list[str], line_no: int, macro: Macro, macro_id: int) -> int:
+    macro.macro_no = macro.macro_no + 1
     macro_pattern = macro.macro_opener
     for t, repl in TYPE_REGEX_MATCH_REPLACERS.items():
         macro_pattern = macro_pattern.replace(t, repl)
@@ -310,7 +312,7 @@ def resolve_macro(curr_compile_lines: list[str], line_no: int, variables: dict[s
     else:
         del curr_compile_lines[line_no]
         for i in reversed(range(0, len(macro.macro_top))):
-            curr_compile_lines.insert(line_no, resolve_args(macro.macro_top[i], args))
+            curr_compile_lines.insert(line_no, resolve_args(macro.macro_top[i], args, macro, macro_id))
         return line_no + len(macro.macro_top)
 
 
@@ -318,9 +320,9 @@ def resolve_macros(curr_compile_lines: list[str], variables: dict[str, int], mac
     curr_indent: dict[str, int] = {}
     for line_no in range(len(curr_compile_lines)):
         found = False
-        for macro_no, macro in macros.items():
+        for macro_id, macro in macros.items():
             if match_instruction(macro.macro_opener, curr_compile_lines[line_no]):
-                line_no = resolve_macro(curr_compile_lines, line_no, variables, macro)
+                line_no = resolve_macro(curr_compile_lines, line_no, macro, macro_id)
                 if line_no == -1:
                     return False
                 found = True

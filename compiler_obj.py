@@ -26,3 +26,4 @@ class Macro:
         self.macro_args = macro_args
         self.macro_closer = macro_closer
         self.macro_opener = macro_opener
+        self.macro_no = 0

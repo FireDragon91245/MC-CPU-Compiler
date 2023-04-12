@@ -1,11 +1,11 @@
-#includemacrofile <stdinstructions>
-load %r1 10
-load %r2 20
+load &r1, 10
+load &r2, 20
 loop:
-jumpifsmaler %r1, %r2, ~res
+cmp &r1, &r2
+jmps ~res
 jmp ~exit
 exit:
 halt
 res:
-inc %r1
+inc &r1
 jmp ~loop

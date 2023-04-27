@@ -1,6 +1,14 @@
 #includemacrofile <stdinstructions>
+#includemacrofile <test.mccpu>
 load &r1, 10
 load &r2, 20
 xor &r1, &r2, &r3, &r4
 push &r1
 halt
+
+if(&r1 == 2){
+    if(&r2 == 10){
+        halt
+    }
+    add &r2, &r1
+}

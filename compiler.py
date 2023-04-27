@@ -150,7 +150,7 @@ def find_static_auto_memory_incremental(variable_memory_pos: dict[str, int], lin
 
 
 def get_imported_files(imported_files, lines, file):
-    include_match = r"<([a-z|0-9|A-Z]+)>"
+    include_match = r"<([a-z|0-9|A-Z|.|_|-]+)>"
     for line_no, line in enumerate(lines):
         if line.startswith('#'):
             if line.find("includemacrofile") != -1:
@@ -161,18 +161,18 @@ def get_imported_files(imported_files, lines, file):
                         file = open(curr_dir + "/macrodefs/" + match + ".mccpu", "rt")
                         if not file.readable():
                             print(
-                                f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file}\" with value \"{line}\" was not found, exiting!")
+                                f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value \"{line}\" was not found, exiting!")
                             return False
                         if imported_files.get(match) is not None:
                             continue
                         imported_files[match] = read_lines(file)
                         get_imported_files(imported_files, imported_files.get(match),
                                            curr_dir + "/macrodefs/" + match + ".mccpu")
-                    elif os.path.isfile(curr_dir + match):
-                        file = open(curr_dir + match, "rt")
+                    elif os.path.isfile(curr_dir + "/" + match):
+                        file = open(curr_dir + "/" + match, "rt")
                         if not file.readable():
                             print(
-                                f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file}\" with value \"{line}\" was not found exiting!")
+                                f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value \"{line}\" was not found exiting!")
                             return False
                         if imported_files.get(match) is not None:
                             continue
@@ -180,7 +180,7 @@ def get_imported_files(imported_files, lines, file):
                         get_imported_files(imported_files, imported_files.get(match), curr_dir + match)
                     else:
                         print(
-                            f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file}\" with value \"{line}\" was not found exiting!")
+                            f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value \"{line}\" was not found exiting!")
                         return False
     return True
 
@@ -209,7 +209,7 @@ def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes]:
 
 def load_macros(macros, file, lines: list[str]):
     macro_reg = r"#\s*macro\s*(.+)"
-    macro_end_reg = r"(#\s*endmacro\s*)(.+)?"
+    macro_end_reg = r"#\s*endmacro\s*(.+)?"
     macro_reg_com = re.compile(macro_reg)
     macro_end_reg_com = re.compile(macro_end_reg)
     lines_iter = enumerate(lines)
@@ -235,12 +235,16 @@ def load_macros(macros, file, lines: list[str]):
                 if line.startswith("//"):
                     continue
                 macro_end_matches = macro_end_reg_com.match(line)
+                try:
+                    groups = macro_end_matches.groups()
+                except:
+                    pass
                 if line == "...":
                     complex_macro = True
                     currently_macro_top = False
-                elif macro_end_matches is not None and len(macro_end_matches.groups()) >= 1:
+                elif macro_end_matches is not None:
                     if complex_macro:
-                        if not (len(macro_end_matches.groups()) >= 2):
+                        if not (len(macro_end_matches.groups()) >= 1):
                             print(f"[ERROR] Complex macros (macros using \"...\") need to have a closing expression "
                                   f"error at #endmacro in file \"{file}\" at line <{line_no}>")
                             return False
@@ -267,7 +271,7 @@ def load_macros(macros, file, lines: list[str]):
 
 
 def match_instruction(inst, line) -> bool | None:
-    inst = inst.replace("(", r"\(").replace("{", r"\{")
+    inst = escape_instruction(inst)
     for t, repl in TYPE_REGEX_MATCH_REPLACERS.items():
         inst = inst.replace(t, repl)
 
@@ -277,11 +281,13 @@ def match_instruction(inst, line) -> bool | None:
 
 def is_only_native_instructions(curr_compile_lines: list[str]):
     for line in curr_compile_lines:
+        if line == '':
+            continue
         if line.startswith('#'):
             continue
         if line.startswith("//"):
             continue
-        if re.match(r"[a-zA-Z][a-zA-Z0-9]+:", line) is not None:
+        if re.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", line) is not None:
             continue
         found = False
         for inst in NATIVE_INSTRUCTIONS:
@@ -295,20 +301,46 @@ def is_only_native_instructions(curr_compile_lines: list[str]):
 
 def resolve_args(macro_line, args, macro: Macro, macro_id: int):
     for i in range(0, len(args.groups())):
-        macro_line = macro_line.replace(f"%{i}", args.group(i+1)).replace("%__macro_id", str(macro_id)).\
+        macro_line = macro_line.replace(f"%{i + 1}", args.group(i+1)).replace("%__macro_id", str(macro_id)).\
             replace("%__macro_no", str(macro.macro_no)).replace("%__macro_head", macro.macro_opener)
     return macro_line
 
 
-def resolve_macro(curr_compile_lines: list[str], line_no: int, macro: Macro, macro_id: int) -> int:
+def escape_instruction(inst: str) -> str:
+    return inst.replace("(", r"\(").replace("{", r"\{").replace(")", r"\)").replace("}", r"\}")
+
+
+def resolve_macro(curr_compile_lines: list[str], line_no: int, macro: Macro, macro_id: int, macros: list[Macro]) -> int:
     macro.macro_no = macro.macro_no + 1
-    macro_pattern = macro.macro_opener
+    macro_pattern = escape_instruction(macro.macro_opener)
     for t, repl in TYPE_REGEX_MATCH_REPLACERS.items():
         macro_pattern = macro_pattern.replace(t, repl)
     args = re.match(macro_pattern, curr_compile_lines[line_no])
 
     if macro.complex_macro:
-        pass
+        level = 0
+        macro_line_no = line_no
+        body: list[str] = []
+        while macro_line_no < len(curr_compile_lines) - 1:
+            macro_line_no = macro_line_no + 1
+            for curr_macro in macros:
+                if curr_macro.macro_closer == macro.macro_closer:
+                    if match_instruction(macro.macro_opener, curr_compile_lines[macro_line_no]):
+                        level = level + 1
+            if curr_compile_lines[macro_line_no] == macro.macro_closer:
+                if level > 0:
+                    level = level - 1
+                else:
+                    break
+            body.append(curr_compile_lines[macro_line_no])
+        del curr_compile_lines[line_no:macro_line_no + 1]
+        for i in reversed(range(0, len(macro.macro_bottom))):
+            curr_compile_lines.insert(line_no, resolve_args(macro.macro_bottom[i], args, macro, macro_id))
+        for i in reversed(range(0, len(body))):
+            curr_compile_lines.insert(line_no, resolve_args(body[i], args, macro, macro_id))
+        for i in reversed(range(0, len(macro.macro_top))):
+            curr_compile_lines.insert(line_no, resolve_args(macro.macro_top[i], args, macro, macro_id))
+        return line_no + len(macro.macro_top) + len(body) + len(macro.macro_bottom)
     else:
         del curr_compile_lines[line_no]
         for i in reversed(range(0, len(macro.macro_top))):
@@ -317,12 +349,13 @@ def resolve_macro(curr_compile_lines: list[str], line_no: int, macro: Macro, mac
 
 
 def resolve_macros(curr_compile_lines: list[str], variables: dict[str, int], macros: dict[int, Macro]) -> bool:
-    curr_indent: dict[str, int] = {}
     for line_no in range(len(curr_compile_lines)):
         found = False
+        if curr_compile_lines[line_no] == '':
+            continue
         for macro_id, macro in macros.items():
             if match_instruction(macro.macro_opener, curr_compile_lines[line_no]):
-                line_no = resolve_macro(curr_compile_lines, line_no, macro, macro_id)
+                line_no = resolve_macro(curr_compile_lines, line_no, macro, macro_id, list(macros.values()))
                 if line_no == -1:
                     return False
                 found = True
@@ -335,7 +368,7 @@ def resolve_macros(curr_compile_lines: list[str], variables: dict[str, int], mac
                 break
         if found:
             continue
-        if re.match(r"[a-zA-Z][a-zA-Z0-9]+:", curr_compile_lines[line_no]) is not None:  # excluded label declarations
+        if re.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", curr_compile_lines[line_no]) is not None:  # excluded label declarations
             continue
         if curr_compile_lines[line_no].startswith("//"):
             continue
@@ -375,6 +408,37 @@ def copy_lines_exclude_compiler_instructions(curr_compile_lines: list[str], line
             curr_compile_lines.append(lines[line_no])
 
 
+def resolve_labels(curr_compile_lines: list[str]) -> bool:
+    curr = 0
+    max_iter = 1000
+    finished = False
+    label_re = r"([a-zA-Z][a-zA-Z0-9_-]+):"
+    label_re_comp = re.compile(label_re)
+
+    while curr < max_iter and not finished:
+        curr = curr + 1
+        found = False
+        instruction_no = 0
+        for line_no in range(len(curr_compile_lines)):
+            if curr_compile_lines[line_no].startswith('//') or curr_compile_lines[line_no] == '':
+                continue
+            instruction_no = instruction_no + 1
+            matches = label_re_comp.match(curr_compile_lines[line_no])
+            if matches is not None:
+                if len(matches.groups()) > 0:
+                    found = True
+                    del curr_compile_lines[line_no]
+                    for i in range(len(curr_compile_lines)):
+                        curr_compile_lines[i] = curr_compile_lines[i].replace("~" + matches.group(1), f"{instruction_no}")
+                    break
+        if not found:
+            break
+    if not curr < max_iter:
+        print(f"[ERROR] Internal compiler error to many labels max of {max_iter} reached")
+        return False
+    return True
+
+
 def compile_file(file_path: str):
     file = open(file_path, "rt")
 
@@ -393,7 +457,7 @@ def compile_file(file_path: str):
 
     for file, file_lines in imported_files.items():
         for file_line_no in range(len(file_lines)):
-            file_lines[file_line_no] = file_lines[file_line_no].lower()
+            file_lines[file_line_no] = file_lines[file_line_no].lower().strip()
 
     macros: dict[int, Macro] = {}
     for file, included_lines in imported_files.items():
@@ -427,6 +491,10 @@ def compile_file(file_path: str):
             print(f"[ERROR] recursive macro? encountered depth of {depth_limit} and still found unresolved macros.")
             return
 
-    print("[INFO] Macros & Variables resolved, the resolved code will be saved to out.mccpu")
+    print("[INFO] Macros resolved, the resolved code will be saved to out.mccpu")
+
+    resolve_labels(curr_compile_lines)
+
+    print("[INFO] Labels resolved")
 
     write_file("out.mccpu", curr_compile_lines)

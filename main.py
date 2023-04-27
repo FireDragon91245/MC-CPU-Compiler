@@ -5,7 +5,7 @@ import compiler
 
 
 def list_format(to_format: list, format_str: str):
-    return ', '.join([format_str]*len(to_format))
+    return ', '.join(['%s']*len(to_format)) % tuple(to_format)
 
 
 # Compiler settings and CPU specs
@@ -13,12 +13,9 @@ COMPILER_VERSION = "1.0-wip"
 CONTRIBUTORS_CPU = [
     "FireDragon91245"
 ]
-CONTRIBUTORS_COMPILER = {
+CONTRIBUTORS_COMPILER = [
     "FireDragon91245"
-}
-MEMORY_SIZE = 256
-MEMORY_BLOCKS = 8
-
+]
 
 
 print("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n")

@@ -1,0 +1,11 @@
+#macro if(%register == %number){
+    #comment begin if
+    load &r32, %2
+    cmp %1, &r32
+    jmpb ~endif%__macro_id_%__macro_no
+    jmps ~endif%__macro_id_%__macro_no
+    #comment begin body
+    ...
+    #comment begin end if
+    endif%__macro_id_%__macro_no:
+#endmacro }

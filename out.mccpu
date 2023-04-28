@@ -1,6 +1,6 @@
 load &r1, 10
 load &r2, 20
-// begin xor %0, &r1, &r2, &r3: 1106332527112940972, 1, xor %register, %register, %register, %register
+// begin xor %0, &r1, &r2, &r3: 1825344750205110258, 1, xor %register, %register, %register, %register
 // %0 xor &r1, &r2 & &r3 are temporary
 cpy &r1, &r3
 cpy &r2, &r4
@@ -13,17 +13,26 @@ or &r1, &r3
 push &r1
 halt
 
+
+mload *0, 10
+mload *32, 10
+mget &r1, *0
+mget &r2, *32
+load &r3, 255
+mset *64, &r3
+
+
 // begin if
 load &r32, 2
 cmp &r1, &r32
-jmpb 22
-jmps 22
+jmpb 28
+jmps 28
 // begin body
 // begin if
 load &r32, 10
 cmp &r2, &r32
-jmpb 21
-jmps 21
+jmpb 27
+jmps 27
 // begin body
 halt
 // begin end if

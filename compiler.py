@@ -1,40 +1,45 @@
-from compiler_obj import MacroTypes, MemoryManagementType, Macro
-import re
 import os
+import re
+
+from compiler_obj import MacroTypes, Macro, CompilerArgs
 
 # %number can be equal to %label, only the compiler deals with %label & %variable and is resolved to %number at
 # compile time
-NATIVE_INSTRUCTIONS = [
-    "ADD %register, %register",  # reg a + reg b (Updates Zero, Overflow CPU flags)
-    "SUB %register, %register",  # reg a - reg b (Updates Zero, Overflow CPU flags)
-    "DIV %register, %register",  # reg a / reg b (Updates Zero, Overflow CPU flags)
-    "MULT %register, %register",  # reg a * reg b (Updates Zero, Overflow CPU flags)
-    "INC %register",  # reg a++ (Updates Overflow CPU flag)
-    "DEC %register",  # reg a-- (Updates Zero, Overflow CPU flags)
-    "CALL %number",  # JMP + PUSH number a
-    "RET",  # POP + JMP upper stack
-    "JMP %label",
-    "JMPZ %label",  # jump if Zero CPU flag is set
-    "JMPS %label",  # jump if Smaller CPU flag is set
-    "JMPB %label",  # jump if Bigger CPU flag is set
-    "JMPE %label",  # jump if Equal CPU flag is set
-    "CMP %register, %register",  # reg a == > < reg b (Updates Smaller, Bigger, Zero, Equal CPU flags)
-    "PUSH %register",  # PUSH + INC stack ptr
-    "POP %register",  # POP + DEC stack ptr
-    "CPY %register, %register",
-    "LOAD %register, %number",
-    "MCPY %address, %address",
-    "MLOAD %address, %number",
-    "MGET %register, %address",
-    "MSET %address, %register",
-    "AND %register, %register",  # (Updates Zero CPU flag)
-    "OR %register, %register",  # (Updates Zero CPU flag)
-    "NOT %register",  # (Updates Zero CPU flag)
-    "SHL %register",  # shift left (Updates Zero CPU flag)
-    "SHR %register",  # shift right (Updates Zero CPU flag)
-    "NOP",  # no operation
-    "HALT",  # disables RUNNING CPU flag and halts the cpu (RUNNING CPU flag is only enabled by the start button in MC)
-]
+NATIVE_INSTRUCTIONS: dict[str, int] = {
+    "ADD %register, %register": 0,  # reg a + reg b (Updates Zero, Overflow CPU flags)
+    "SUB %register, %register": 1,  # reg a - reg b (Updates Zero, Overflow CPU flags)
+    "DIV %register, %register": 2,  # reg a / reg b (Updates Zero, Overflow CPU flags)
+    "MULT %register, %register": 3,  # reg a * reg b (Updates Zero, Overflow CPU flags)
+    "INC %register": 4,  # reg a++ (Updates Overflow CPU flag)
+    "DEC %register": 5,  # reg a-- (Updates Zero, Overflow CPU flags)
+    "CALL %number": 6,  # JMP + PUSH number a
+    "RET": 7,  # POP + JMP upper stack
+    "JMP %label": 8,
+    "JMPZ %label": 9,  # jump if Zero CPU flag is set
+    "JMPS %label": 10,  # jump if Smaller CPU flag is set
+    "JMPB %label": 11,  # jump if Bigger CPU flag is set
+    "JMPE %label": 12,  # jump if Equal CPU flag is set
+    "CMP %register, %register": 13,  # reg a == > < reg b (Updates Smaller, Bigger, Zero, Equal CPU flags)
+    "PUSH %register": 14,  # PUSH + INC stack ptr
+    "POP %register": 15,  # POP + DEC stack ptr
+    "CPY %register, %register": 16,
+    "LOAD %register, %number": 17,
+    "MCPY %address, %address": 18,
+    "MCPY %variable, %variable": 18,
+    "MLOAD %address, %number": 19,
+    "MLOAD %variable, %number": 19,
+    "MGET %register, %address": 20,
+    "MGET %register, %variable": 20,
+    "MSET %address, %register": 21,
+    "MSET %variable, %register": 21,
+    "AND %register, %register": 22,  # (Updates Zero CPU flag)
+    "OR %register, %register": 23,  # (Updates Zero CPU flag)
+    "NOT %register": 24,  # (Updates Zero CPU flag)
+    "SHL %register": 25,  # shift left (Updates Zero CPU flag)
+    "SHR %register": 26,  # shift right (Updates Zero CPU flag)
+    "NOP": 27,  # no operation
+    "HALT": 28,  # halts the cpu
+}
 TYPE_REGEX_MATCH_REPLACERS = {
     "%register": "(&r[0-9]{1,3})",
     "%number": "(0x[0-9A-Fa-f]{1,2}|[0-9]{1,3})",
@@ -48,37 +53,45 @@ def read_lines(file):
     return file.read().splitlines()
 
 
-def get_memory_management_type_static(line, line_no):
-    if line.find("auto") != -1:
-        if line.find("incremental") != -1:
-            return MemoryManagementType.AUTO_STATIC_INCREMENTAL
-        elif line.find("balanced") != -1:
-            return MemoryManagementType.AUTO_STATIC_BALANCED
-        else:
-            print(
-                f"[WARN] #memorylayout [static auto] section at ln<{line_no}> did not contain a memory balancing type "
-                f"[incremental / balanced] defaulting to [incremental]")
-            return MemoryManagementType.AUTO_STATIC_INCREMENTAL
+def next_memory_address(var_count: int, blocks: int, balance: bool, mem_size: int) -> int:
+    if not balance:
+        return var_count
     else:
-        if line.find("incremental") != -1:
-            return MemoryManagementType.STATIC_INCREMENTAL
-        elif line.find("balanced") != -1:
-            return MemoryManagementType.STATIC_BALANCED
-        else:
-            print(
-                f"[WARN] #memorylayout [static] section at ln<{line_no}> did not contain a memory balancing type ["
-                f"incremental / balanced] defaulting to [incremental]")
-            return MemoryManagementType.STATIC_INCREMENTAL
+        block = var_count % 8
+        cell = (var_count - block) / 8
+        address = (mem_size / blocks) * block + cell
+        return int(address)
 
 
-def get_memory_management_type(lines):
-    for line_no, line in enumerate(lines):
+def get_var_memory_address(lines: list[str], variables: dict[str, int], args: CompilerArgs):
+    line_enumerate = enumerate(lines)
+    for line_no, line in line_enumerate:
         if line.startswith("#"):
             if line.find("memorylayout") != -1:
-                if line.find("static") != -1:
-                    return get_memory_management_type_static(line, line_no)
-                elif line.find("explicit") != -1:
-                    return MemoryManagementType.EXPLICIT
+                if line.find("explicit") != -1:
+                    return True
+                elif line.find("auto") != -1 and line.find("static") != -1:
+                    if line.find("incremental") != -1:
+                        find_var_static_auto_all(line_enumerate, variables, False, args)
+                        return True
+                    elif line.find("balanced") != -1:
+                        find_var_static_auto_all(line_enumerate, variables, True, args)
+                        return True
+                    else:
+                        print(f"[WARN] No memory balancing type found at #memorylayout ln <{line}> defaulting to "
+                              f"[Incremental]")
+                        find_var_static_auto_all(line_enumerate, variables, False, args)
+                        return True
+                elif line.find("static") != -1:
+                    start_ln = line_no
+                    if line.find("incremental") != -1:
+                        return find_var_static_all(line_enumerate, start_ln, variables, False, args)
+                    elif line.find("balanced") != -1:
+                        return find_var_static_all(line_enumerate, start_ln, variables, True, args)
+                    else:
+                        print(f"[WARN] No memory balancing type found at #memorylayout ln <{start_ln}> defaulting to "
+                              f"[Incremental]")
+                        return find_var_static_all(line_enumerate, start_ln, variables, False, args)
                 else:
                     print(
                         f"[WARN] #memorylayout at ln<{line_no}> does not contain a valid variable layout type token ["
@@ -87,66 +100,37 @@ def get_memory_management_type(lines):
     print(
         "[WARN] No #memorylayout section found or no valid variable layout type token found [static / static auto / "
         "explicit] + address balancing type [incremental / balanced] defaulting to [static auto incremental]")
-    return MemoryManagementType.AUTO_STATIC_INCREMENTAL
+    return True
 
 
-def find_static_memory_layout_balanced(variable_memory_pos, lines):
-    memory_space = 256
-    memory_bank_index = [
-        0,
-        32,
-        64,
-        96,
-        128,
-        160,
-        192,
-        224
-    ]
-    curr_memory_bank = 0
+def find_var_static_all(line_enumerate: enumerate[str], start_ln: int, variables: dict[str, int], balanced: bool,
+                        args: CompilerArgs):
+    var_count = 0
+    while True:
+        line_no, line = next(line_enumerate, (None, None))
+        if line is None:
+            print(f"[ERROR] Expected #endmemorylayout after #ememorylayout at ln <{start_ln}>")
+            return False
+        if line.find("#endmemorylayout") != -1:
+            return True
+        variables[line] = next_memory_address(var_count, args.memory_blocks, balanced, args.mem_size)
+        var_count = var_count + 1
 
 
-def find_static_memory_layout_incremental(variable_memory_pos: dict, lines):
-    curr_line = 0
-    memory_space = 256
-    memory_index = 0
-    for line_no, line in enumerate(lines):
-        if line.startswith("#"):
-            if line.find("memorylayout") != -1:
-                curr_line = line_no + 1
-
-    while curr_line < lines.count():
-        if lines[curr_line].startswith("#"):
-            if lines[curr_line].find("end") != 1 and line[curr_line].find("memorylayout") != 1:
-                break
-
-        variable_memory_pos.update({memory_index: lines[curr_line].strip()})
-        memory_index = memory_index + 1
-
-        if memory_index >= memory_space:
-            print("[ERROR] out of memory addresses, exiting")
+def find_var_static_auto_all(line_enumerate: enumerate[str], variables: dict[str, int], balanced: bool,
+                             args: CompilerArgs) -> None:
+    re_var = r"\*([a-zA-Z][a-zA-Z0-9]*)"
+    re_var_comp = re.compile(re_var)
+    var_count = 0
+    while True:
+        line_no, line = next(line_enumerate, (None, None))
+        if line is None:
             return
-
-        curr_line = curr_line + 1
-
-
-def find_static_auto_memory_balanced(variable_memory_pos, lines):
-    pass
-
-
-def find_static_auto_memory_incremental(variable_memory_pos: dict[str, int], lines: list[str]):
-    memory_space = 256
-    memory_index = 0
-    var_match = r"\*[a-zA-Z]+"
-    for line_no, line in enumerate(lines):
-        matches: list[str] = re.findall(var_match, line)
+        matches = re_var_comp.findall(line)
         for match in matches:
-            if variable_memory_pos.get(match.lstrip('*')) is None:
-                variable_memory_pos.update({match.lstrip('*'): memory_index})
-                memory_index = memory_index + 1
-
-                if memory_index >= memory_space:
-                    print("[ERROR] out of memory addresses, exiting")
-                    return
+            if variables.get(match) is None:
+                variables[match] = next_memory_address(var_count, args.memory_blocks, balanced, args.mem_size)
+                var_count = var_count + 1
 
 
 def get_imported_files(imported_files, lines, file):
@@ -161,7 +145,8 @@ def get_imported_files(imported_files, lines, file):
                         file = open(curr_dir + "/macrodefs/" + match + ".mccpu", "rt")
                         if not file.readable():
                             print(
-                                f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value \"{line}\" was not found, exiting!")
+                                f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value "
+                                f"\"{line}\" was not found, exiting!")
                             return False
                         if imported_files.get(match) is not None:
                             continue
@@ -172,7 +157,8 @@ def get_imported_files(imported_files, lines, file):
                         file = open(curr_dir + "/" + match, "rt")
                         if not file.readable():
                             print(
-                                f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value \"{line}\" was not found exiting!")
+                                f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value "
+                                f"\"{line}\" was not found exiting!")
                             return False
                         if imported_files.get(match) is not None:
                             continue
@@ -180,12 +166,13 @@ def get_imported_files(imported_files, lines, file):
                         get_imported_files(imported_files, imported_files.get(match), curr_dir + match)
                     else:
                         print(
-                            f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value \"{line}\" was not found exiting!")
+                            f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value "
+                            f"\"{line}\" was not found exiting!")
                         return False
     return True
 
 
-def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes]:
+def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes] | None:
     type_reg = r"%[a-zA-Z]*"
     matches: list[str] = re.findall(type_reg, macro_opener)
     macro_types: list[MacroTypes] = []
@@ -202,7 +189,8 @@ def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes]:
             macro_types.append(MacroTypes.REGISTER)
         else:
             print(
-                f"[ERROR] macro \"{macro_opener}\" in file \"{file}\" at line <{line_no}> used not valid type \"{match}\" valid are [%label, %variable, %address, %number, %register]")
+                f"[ERROR] macro \"{macro_opener}\" in file \"{file}\" at line <{line_no}> used not valid type "
+                f"\"{match}\" valid are [%label, %variable, %address, %number, %register]")
             return None
     return macro_types
 
@@ -235,10 +223,6 @@ def load_macros(macros, file, lines: list[str]):
                 if line.startswith("//"):
                     continue
                 macro_end_matches = macro_end_reg_com.match(line)
-                try:
-                    groups = macro_end_matches.groups()
-                except:
-                    pass
                 if line == "...":
                     complex_macro = True
                     currently_macro_top = False
@@ -290,7 +274,7 @@ def is_only_native_instructions(curr_compile_lines: list[str]):
         if re.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", line) is not None:
             continue
         found = False
-        for inst in NATIVE_INSTRUCTIONS:
+        for inst in NATIVE_INSTRUCTIONS.keys():
             if match_instruction(inst.lower(), line):
                 found = True
                 break
@@ -301,7 +285,7 @@ def is_only_native_instructions(curr_compile_lines: list[str]):
 
 def resolve_args(macro_line, args, macro: Macro, macro_id: int):
     for i in range(0, len(args.groups())):
-        macro_line = macro_line.replace(f"%{i + 1}", args.group(i+1)).replace("%__macro_id", str(macro_id)).\
+        macro_line = macro_line.replace(f"%{i + 1}", args.group(i + 1)).replace("%__macro_id", str(macro_id)). \
             replace("%__macro_no", str(macro.macro_no)).replace("%__macro_head", macro.macro_opener)
     return macro_line
 
@@ -348,7 +332,7 @@ def resolve_macro(curr_compile_lines: list[str], line_no: int, macro: Macro, mac
         return line_no + len(macro.macro_top)
 
 
-def resolve_macros(curr_compile_lines: list[str], variables: dict[str, int], macros: dict[int, Macro]) -> bool:
+def resolve_macros(curr_compile_lines: list[str], macros: dict[int, Macro]) -> bool:
     for line_no in range(len(curr_compile_lines)):
         found = False
         if curr_compile_lines[line_no] == '':
@@ -362,7 +346,7 @@ def resolve_macros(curr_compile_lines: list[str], variables: dict[str, int], mac
                 break
         if found:
             continue
-        for inst in NATIVE_INSTRUCTIONS:
+        for inst in NATIVE_INSTRUCTIONS.keys():
             if match_instruction(inst.lower(), curr_compile_lines[line_no]):
                 found = True
                 break
@@ -374,7 +358,8 @@ def resolve_macros(curr_compile_lines: list[str], variables: dict[str, int], mac
             continue
         if not found:
             print(
-                f"[ERROR] can not resolve instruction \"{curr_compile_lines[line_no]}\" to any macro or std instruction")
+                f"[ERROR] can not resolve instruction \"{curr_compile_lines[line_no]}\" "
+                f"to any macro or std instruction")
             return False
     return True
 
@@ -390,7 +375,7 @@ def copy_lines_exclude_compiler_instructions(curr_compile_lines: list[str], line
     for line_no in range(len(lines)):
         if lines[line_no].startswith("#memorylayout"):
             line_no_start = line_no
-            while not lines[line_no].startswith("#enmemorylayout"):
+            while lines[line_no].find("#endmemorylayout") == -1:
                 line_no = line_no + 1
                 if line_no >= len(lines):
                     print(f"[ERROR] expected #endmemorylayout after #memorylayout at ln <{line_no_start}>")
@@ -429,7 +414,8 @@ def resolve_labels(curr_compile_lines: list[str]) -> bool:
                     found = True
                     del curr_compile_lines[line_no]
                     for i in range(len(curr_compile_lines)):
-                        curr_compile_lines[i] = curr_compile_lines[i].replace("~" + matches.group(1), f"{instruction_no}")
+                        curr_compile_lines[i] = curr_compile_lines[i].replace("~" + matches.group(1),
+                                                                              f"{instruction_no}")
                     break
         if not found:
             break
@@ -439,7 +425,54 @@ def resolve_labels(curr_compile_lines: list[str]) -> bool:
     return True
 
 
-def compile_file(file_path: str):
+def resolve_variables(curr_compile_lines: list[str], variable_memory_pos: dict[str, int]):
+    for line_no in range(len(curr_compile_lines)):
+        for var, address in variable_memory_pos.items():
+            curr_compile_lines[line_no] = curr_compile_lines[line_no].replace(f"*{var}", f"*{address:.0f}")
+
+
+def instructions_to_rom(curr_compile_lines: list[str], rom_translation: list[(int, int, int)]) -> bool:
+    for line in curr_compile_lines:
+        if line == '':
+            continue
+        if line.startswith('//'):
+            continue
+        for inst, inst_id in NATIVE_INSTRUCTIONS.items():
+            if match_instruction(inst, line):
+                parts = line.replace('*', '').split(' ')
+                if len(parts) > 2:
+                    rom_translation.append((inst_id, int(parts[1]), int(parts[2])))
+                elif len(parts) > 1:
+                    rom_translation.append((inst_id, int(parts[1], 0)))
+                else:
+                    rom_translation.append((inst_id, 0, 0))
+            else:
+                print(f"[ERROR] Instruction \"{line}\" can not be resolved to a Native instruction after compiling,"
+                      " exiting!")
+                return False
+    return True
+
+
+def call_language_handler(curr_compile_lines: list[str], rom_translation: list[(int, int, int)], args: CompilerArgs):
+    module = __import__(f"targets.{args.target_lang.upper()}")
+    if module is None:
+        print(f"[ERROR] Canot find language modul for language \"{args.target_lang}\"")
+        return
+    lang_class = getattr(module, args.target_lang.upper(), None)
+    if lang_class is None:
+        print(f"[ERROR] Language modul \"{args.target_lang}\" did not contain a handler class")
+        return
+    lang_func = getattr(lang_class, "transpile", None)
+    if lang_func is None:
+        print(f"[ERROR] Language class \"{args.target_lang}\" did not contain a handler function")
+        return
+    try:
+        lang_func(curr_compile_lines, rom_translation, args)
+    except TypeError:
+        print(f"[ERROR] Handler function has the wrong argument types, or count")
+
+
+def compile_file(file_path: str, args: CompilerArgs):
     file = open(file_path, "rt")
 
     if not file.readable():
@@ -465,19 +498,11 @@ def compile_file(file_path: str):
 
     load_macros(macros, file_path, lines)
 
-    memory_management_type = get_memory_management_type(lines)
+    variable_memory_pos: dict[str, int] = {}
+    if not get_var_memory_address(lines, variable_memory_pos, args):
+        return
 
     curr_compile_lines: list[str] = []
-
-    variable_memory_pos: dict[str, int] = {}
-    if memory_management_type == MemoryManagementType.STATIC_BALANCED:
-        find_static_memory_layout_balanced(variable_memory_pos, lines)
-    elif memory_management_type == MemoryManagementType.STATIC_INCREMENTAL:
-        find_static_memory_layout_incremental(variable_memory_pos, lines)
-    elif memory_management_type == MemoryManagementType.AUTO_STATIC_BALANCED:
-        find_static_auto_memory_balanced(variable_memory_pos, lines)
-    elif memory_management_type == MemoryManagementType.AUTO_STATIC_INCREMENTAL:
-        find_static_auto_memory_incremental(variable_memory_pos, lines)
 
     copy_lines_exclude_compiler_instructions(curr_compile_lines, lines)
 
@@ -485,16 +510,23 @@ def compile_file(file_path: str):
     curr_depth = 0
     while not is_only_native_instructions(curr_compile_lines):
         curr_depth = curr_depth + 1
-        if not resolve_macros(curr_compile_lines, variable_memory_pos, macros):
+        if not resolve_macros(curr_compile_lines, macros):
             return
         if curr_depth >= depth_limit:
             print(f"[ERROR] recursive macro? encountered depth of {depth_limit} and still found unresolved macros.")
             return
 
-    print("[INFO] Macros resolved, the resolved code will be saved to out.mccpu")
+    print("[INFO] Macros resolved")
 
     resolve_labels(curr_compile_lines)
 
     print("[INFO] Labels resolved")
 
-    write_file("out.mccpu", curr_compile_lines)
+    resolve_variables(curr_compile_lines, variable_memory_pos)
+
+    print("[INFO] Variables resolved")
+
+    rom_translation: list[(int, int, int)] = []
+    instructions_to_rom(curr_compile_lines, rom_translation)
+
+    call_language_handler(curr_compile_lines, rom_translation, args)

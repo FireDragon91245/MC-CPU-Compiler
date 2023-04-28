@@ -6,6 +6,17 @@ xor &r1, &r2, &r3, &r4
 push &r1
 halt
 
+#memorylayout static auto balanced
+#endmemorylayout
+
+mload *Num1, 10
+mload *Num2, 10
+mget &r1, *Num1
+mget &r2, *Num2
+load &r3, 255
+mset *Num3, &r3
+
+
 if(&r1 == 2){
     if(&r2 == 10){
         halt

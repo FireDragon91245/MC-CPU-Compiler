@@ -16,6 +16,7 @@ int main()
     }
     byte stack[STACK_SIZE];
     byte registers[REGISTER_COUNT];
+    long stackPtr = -1;
     %code
     free(memory);
 }

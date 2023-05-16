@@ -7,40 +7,95 @@ from compiler_obj import MacroTypes, Macro, CompilerArgs
 # compile time
 NATIVE_INSTRUCTIONS: dict[str, int] = {
     "ADD %register, %register": 0,  # reg a + reg b (Updates Zero, Overflow CPU flags)
-    "SUB %register, %register": 1,  # reg a - reg b (Updates Zero, Overflow CPU flags)
-    "DIV %register, %register": 2,  # reg a / reg b (Updates Zero, Overflow CPU flags)
-    "MULT %register, %register": 3,  # reg a * reg b (Updates Zero, Overflow CPU flags)
-    "INC %register": 4,  # reg a++ (Updates Overflow CPU flag)
-    "DEC %register": 5,  # reg a-- (Updates Zero, Overflow CPU flags)
-    "CALL %number": 6,  # JMP + PUSH number a
-    "RET": 7,  # POP + JMP upper stack
-    "JMP %label": 8,
-    "JMPZ %label": 9,  # jump if Zero CPU flag is set
-    "JMPS %label": 10,  # jump if Smaller CPU flag is set
-    "JMPB %label": 11,  # jump if Bigger CPU flag is set
-    "JMPE %label": 12,  # jump if Equal CPU flag is set
-    "CMP %register, %register": 13,  # reg a == > < reg b (Updates Smaller, Bigger, Zero, Equal CPU flags)
-    "PUSH %register": 14,  # PUSH + INC stack ptr
-    "POP %register": 15,  # POP + DEC stack ptr
-    "CPY %register, %register": 16,
-    "LOAD %register, %number": 17,
-    "MCPY %address, %address": 18,
-    "MCPY %variable, %variable": 18,
-    "MLOAD %address, %number": 19,
-    "MLOAD %variable, %number": 19,
-    "MGET %register, %address": 20,
-    "MGET %register, %variable": 20,
-    "MSET %address, %register": 21,
-    "MSET %variable, %register": 21,
-    "AND %register, %register": 22,  # (Updates Zero CPU flag)
-    "OR %register, %register": 23,  # (Updates Zero CPU flag)
-    "NOT %register": 24,  # (Updates Zero CPU flag)
-    "SHL %register": 25,  # shift left (Updates Zero CPU flag)
-    "SHR %register": 26,  # shift right (Updates Zero CPU flag)
+    "DYNADD %registerpointer, %registerpointer": 1,
+    "DYNADDA %registerpointer, %register": 2,
+    "DYNADDB %register, %registerpointer": 3,
+    "SUB %register, %register": 4,  # reg a - reg b (Updates Zero, Overflow CPU flags)
+    "DYNSUB %registerpointer, %registerpointer": 5,
+    "DYNSUBA %registerpointer, %register": 6,
+    "DYNSUBB %register, %registerpointer": 7,
+    "DIV %register, %register": 8,  # reg a / reg b (Updates Zero, Overflow CPU flags)
+    "DYNDIV %registerpointer, %registerpointer": 9,
+    "DYNDIVA %registerpointer, %register": 10,
+    "DYNDIVB %register, %registerpointer": 11,
+    "MULT %register, %register": 12,  # reg a * reg b (Updates Zero, Overflow CPU flags)
+    "DYNMULT %registerpointer, %registerpointer": 13,
+    "DYNMULTA %registerpointer, %register": 14,
+    "DYNMULTB %register, %registerpointer": 15,
+    "INC %register": 16,  # reg a++ (Updates Overflow CPU flag)
+    "DYNINC %registerpointer": 17,
+    "DEC %register": 18,  # reg a-- (Updates Zero, Overflow CPU flags)
+    "DYNDEC %registerpointer": 19,
+    "CALL %number": 20,  # JMP + PUSH number a
+    "RET": 21,  # POP + JMP upper stack
+    "JMP %label": 22,
+    "JMPZ %label": 23,  # jump if Zero CPU flag is set
+    "JMPS %label": 24,  # jump if Smaller CPU flag is set
+    "JMPB %label": 25,  # jump if Bigger CPU flag is set
+    "JMPE %label": 26,  # jump if Equal CPU flag is set
+    "CMP %register, %register": 27,  # reg a == > < reg b (Updates Smaller, Bigger, Zero, Equal CPU flags)
+    "DYNCMP %registerpointer, %registerpointer": 28,
+    "DYNCMPA %registerpointer, %register": 29,
+    "DYNCMPB %register, %registerpointer": 30,
+    "PUSH %register": 31,  # PUSH + INC stack ptr
+    "DYNPUSH %registerpointer": 32,
+    "POP %register": 33,  # POP + DEC stack ptr
+    "DYNPOP %registerpointer": 34,
+    "CPY %register, %register": 35,
+    "DYNCPY %registerpointer, %registerpointer": 36,
+    "DYNCPYA %registerpointer, %register": 37,
+    "DYNCPYB %register, %registerpointer": 38,
+    "LOAD %register, %number": 39,
+    "DYNLOAD %registerpointer, %number": 40,
+    "MCPY %address, %address": 41,
+    "DYNMCPY %memorypointer, %memorypointer": 42,
+    "DYNMCPYA %memorypointer, %address": 43,
+    "DYNMCPYB %address, %memorypointer": 44,
+    "MCPY %variable, %variable": 41,
+    "DYNMCPY %variablepointer, %variablepointer": 42,
+    "DYNMCPYA %variablepointer, %variable": 43,
+    "DYNMCPYB %variable, %variablepointer": 44,
+    "MLOAD %address, %number": 45,
+    "DYNMLOAD %memorypointer, %number": 46,
+    "MLOAD %variable, %number": 45,
+    "DYNMLOAD %variablepointer, %number": 46,
+    "MGET %register, %address": 47,
+    "DYNMGET %registerpointer, %memorypointer": 48,
+    "DYNMGETA %registerpointer, %address": 49,
+    "DYNMGETB %register, %memorypointer": 50,
+    "MGET %register, %variable": 47,
+    "DYNMGET %registerpointer, %variablepointer": 48,
+    "DYNMGETA %registerpointer, %variable": 49,
+    "DYNMGETB %register, %variablepointer": 50,
+    "MSET %address, %register": 51,
+    "DYNMSET %memorypointer, %registerpointer": 52,
+    "DYNMSETA %memorypointer, %register": 53,
+    "DYNMSETB %address, %registerpointer": 54,
+    "MSET %variable, %register": 51,
+    "DYNMSET %variablepointer, %registerpointer": 52,
+    "DYNMSETA %variablepointer, %register": 53,
+    "DYNMSETB %variable, %registerpointer": 54,
+    "AND %register, %register": 55,  # (Updates Zero CPU flag)
+    "DYNAND %registerpointer, %registerpointer": 56,
+    "DYNANDA %registerpointer, %register": 57,
+    "DYNANDB %register, %registerpointer": 58,
+    "OR %register, %register": 59,  # (Updates Zero CPU flag)
+    "DYNOR %registerpointer, %registerpointer": 60,
+    "DYNORA %registerpointer, %register": 61,
+    "DYNORB %register, %registerpointer": 62,
+    "NOT %register": 63,  # (Updates Zero CPU flag)
+    "DYNNOT %registerpointer": 64,
+    "SHL %register": 65,  # shift left (Updates Zero CPU flag)
+    "DYNSHL %registerpointer": 66,
+    "SHR %register": 67,  # shift right (Updates Zero CPU flag)
+    "DYNSHR %registerpointer": 68,
     "NOP": 27,  # no operation
     "HALT": 28,  # halts the cpu
 }
 TYPE_REGEX_MATCH_REPLACERS = {
+    "%registerpointer": r"(\[&r[0-9]{1,3}\])",
+    "%memorypointer": r"(\[\*0x[0-9A-Fa-f]{1,2}\]|\[\*[0-9]{1,3}\])",
+    "%variablepointer": r"(\[\*[a-zA-Z][a-zA-Z0-9]*\])",
     "%register": "(&r[0-9]{1,3})",
     "%number": "(0x[0-9A-Fa-f]{1,2}|[0-9]{1,3})",
     "%address": r"(\*0x[0-9A-Fa-f]{1,2}|\*[0-9]{1,3})",

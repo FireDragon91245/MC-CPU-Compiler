@@ -1,25 +1,15 @@
-#includemacrofile <stdinstructions>
-#includemacrofile <test.mccpu>
-load &r1, 10
-load &r2, 20
-xor &r1, &r2, &r3, &r4
-push &r1
-halt
-
 #memorylayout static auto balanced
 #endmemorylayout
 
-mload *Num1, 10
-mload *Num2, 10
-mget &r1, *Num1
-mget &r2, *Num2
-load &r3, 255
-mset *Num3, &r3
+mov &r0, 0x00
+mov &r1, 0x00
 
+mov &r3, 0x0F
 
-if(&r1 == 2){
-    if(&r2 == 10){
-        halt
-    }
-    add &r2, &r1
-}
+loop:
+inc &r0
+add &r1, &r0
+cmp &r0, &r3
+jge ~loop
+
+halt

@@ -7,6 +7,7 @@ class MacroTypes(Enum):
     MEMORY_ADDRESS = 3
     NUMBER = 4
     REGISTER = 5
+    REGISTER_POINTER = 6
 
 
 class Macro:

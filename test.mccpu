@@ -9,3 +9,48 @@
     #comment begin end if
     endif%__macro_id_%__macro_no:
 #endmacro }
+
+#macro while(true) {
+    whiletrue%__macro_id_%__macro_no:
+    ...
+    JMP ~whiletrue%__macro_id_%__macro_no
+#endmacro }
+
+while(true) {
+    ADD r1, 1
+}
+
+while(true) {
+    whiletrue129512951729_1:
+    ADD r1, 1
+    JMP ~whiletrue129512951729_1
+}
+
+whiletrue129512951729_1:
+ADD r1, 1
+JMP ~whiletrue129512951729_1
+
+
+#macro LOADSUB %register, %register, %number, %number
+LOAD %1, %3
+LOAD %2, %4
+SUB %1, %2
+#endmacro
+
+ml:
+
+
+
+~ml
+
+LOADSUB r1, r2, 0xFF, 0xF0 *214
+
+LOAD r1, 0xFF
+LOAD r2, 0xF0
+SUB r1, r2
+LOAD r1, 0xFF
+LOAD r2, 0xF0
+SUB r1, r2
+LOAD r1, 0xFF
+LOAD r2, 0xF0
+SUB r1, r2

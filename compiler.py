@@ -6,96 +6,27 @@ from compiler_obj import MacroTypes, Macro, CompilerArgs
 # %number can be equal to %label, only the compiler deals with %label & %variable and is resolved to %number at
 # compile time
 NATIVE_INSTRUCTIONS: dict[str, int] = {
-    "ADD %register, %register": 0,  # reg a + reg b (Updates Zero, Overflow CPU flags)
-    "DYNADD %registerpointer, %registerpointer": 1,
-    "DYNADDA %registerpointer, %register": 2,
-    "DYNADDB %register, %registerpointer": 3,
-    "SUB %register, %register": 4,  # reg a - reg b (Updates Zero, Overflow CPU flags)
-    "DYNSUB %registerpointer, %registerpointer": 5,
-    "DYNSUBA %registerpointer, %register": 6,
-    "DYNSUBB %register, %registerpointer": 7,
-    "DIV %register, %register": 8,  # reg a / reg b (Updates Zero, Overflow CPU flags)
-    "DYNDIV %registerpointer, %registerpointer": 9,
-    "DYNDIVA %registerpointer, %register": 10,
-    "DYNDIVB %register, %registerpointer": 11,
-    "MULT %register, %register": 12,  # reg a * reg b (Updates Zero, Overflow CPU flags)
-    "DYNMULT %registerpointer, %registerpointer": 13,
-    "DYNMULTA %registerpointer, %register": 14,
-    "DYNMULTB %register, %registerpointer": 15,
-    "INC %register": 16,  # reg a++ (Updates Overflow CPU flag)
-    "DYNINC %registerpointer": 17,
-    "DEC %register": 18,  # reg a-- (Updates Zero, Overflow CPU flags)
-    "DYNDEC %registerpointer": 19,
-    "CALL %number": 20,  # JMP + PUSH number a
-    "RET": 21,  # POP + JMP upper stack
-    "JMP %label": 22,
-    "JMPZ %label": 23,  # jump if Zero CPU flag is set
-    "JMPS %label": 24,  # jump if Smaller CPU flag is set
-    "JMPB %label": 25,  # jump if Bigger CPU flag is set
-    "JMPE %label": 26,  # jump if Equal CPU flag is set
-    "CMP %register, %register": 27,  # reg a == > < reg b (Updates Smaller, Bigger, Zero, Equal CPU flags)
-    "DYNCMP %registerpointer, %registerpointer": 28,
-    "DYNCMPA %registerpointer, %register": 29,
-    "DYNCMPB %register, %registerpointer": 30,
-    "PUSH %register": 31,  # PUSH + INC stack ptr
-    "DYNPUSH %registerpointer": 32,
-    "POP %register": 33,  # POP + DEC stack ptr
-    "DYNPOP %registerpointer": 34,
-    "CPY %register, %register": 35,
-    "DYNCPY %registerpointer, %registerpointer": 36,
-    "DYNCPYA %registerpointer, %register": 37,
-    "DYNCPYB %register, %registerpointer": 38,
-    "LOAD %register, %number": 39,
-    "DYNLOAD %registerpointer, %number": 40,
-    "MCPY %address, %address": 41,
-    "DYNMCPY %memorypointer, %memorypointer": 42,
-    "DYNMCPYA %memorypointer, %address": 43,
-    "DYNMCPYB %address, %memorypointer": 44,
-    "MCPY %variable, %variable": 41,
-    "DYNMCPY %variablepointer, %variablepointer": 42,
-    "DYNMCPYA %variablepointer, %variable": 43,
-    "DYNMCPYB %variable, %variablepointer": 44,
-    "MLOAD %address, %number": 45,
-    "DYNMLOAD %memorypointer, %number": 46,
-    "MLOAD %variable, %number": 45,
-    "DYNMLOAD %variablepointer, %number": 46,
-    "MGET %register, %address": 47,
-    "DYNMGET %registerpointer, %memorypointer": 48,
-    "DYNMGETA %registerpointer, %address": 49,
-    "DYNMGETB %register, %memorypointer": 50,
-    "MGET %register, %variable": 47,
-    "DYNMGET %registerpointer, %variablepointer": 48,
-    "DYNMGETA %registerpointer, %variable": 49,
-    "DYNMGETB %register, %variablepointer": 50,
-    "MSET %address, %register": 51,
-    "DYNMSET %memorypointer, %registerpointer": 52,
-    "DYNMSETA %memorypointer, %register": 53,
-    "DYNMSETB %address, %registerpointer": 54,
-    "MSET %variable, %register": 51,
-    "DYNMSET %variablepointer, %registerpointer": 52,
-    "DYNMSETA %variablepointer, %register": 53,
-    "DYNMSETB %variable, %registerpointer": 54,
-    "AND %register, %register": 55,  # (Updates Zero CPU flag)
-    "DYNAND %registerpointer, %registerpointer": 56,
-    "DYNANDA %registerpointer, %register": 57,
-    "DYNANDB %register, %registerpointer": 58,
-    "OR %register, %register": 59,  # (Updates Zero CPU flag)
-    "DYNOR %registerpointer, %registerpointer": 60,
-    "DYNORA %registerpointer, %register": 61,
-    "DYNORB %register, %registerpointer": 62,
-    "NOT %register": 63,  # (Updates Zero CPU flag)
-    "DYNNOT %registerpointer": 64,
-    "SHL %register": 65,  # shift left (Updates Zero CPU flag)
-    "DYNSHL %registerpointer": 66,
-    "SHR %register": 67,  # shift right (Updates Zero CPU flag)
-    "DYNSHR %registerpointer": 68,
-    "NOP": 27,  # no operation
-    "HALT": 28,  # halts the cpu
+    "add %register, %register": 1,
+    "add %register, %registerpointer": 2,
+    "add %register, %number": 3,
+    "add %register, %address": 4,
+    "add %register, %variable": 4,
+    "add %registerpointer, %register": 5,
+    "add %registerpointer, %registerpointer": 6,
+    "add %registerpointer, %number": 7,
+    "add %registerpointer, %address": 8,
+    "add %registerpointer, %variable": 8,
+    "add %address, %register": 9,
+    "add %variable, %register": 9,
+    "add %address, %registerpointer": 10,
+    "add %variable, %registerpointer": 10,
+    "add %address, %number": 11,
+    "add %variable, %number": 11,
+    "add %address, %address": 12,
+    "add %variable, %variable": 12,
 }
 TYPE_REGEX_MATCH_REPLACERS = {
     "%registerpointer": r"(\[&r[0-9]{1,3}\])",
-    "%memorypointer": r"(\[\*0x[0-9A-Fa-f]{1,2}\]|\[\*[0-9]{1,3}\])",
-    "%variablepointer": r"(\[\*[a-zA-Z][a-zA-Z0-9]*\])",
     "%register": "(&r[0-9]{1,3})",
     "%number": "(0x[0-9A-Fa-f]{1,2}|[0-9]{1,3})",
     "%address": r"(\*0x[0-9A-Fa-f]{1,2}|\*[0-9]{1,3})",
@@ -495,12 +426,7 @@ def instructions_to_rom(curr_compile_lines: list[str], rom_translation: list[(in
         for inst, inst_id in NATIVE_INSTRUCTIONS.items():
             if match_instruction(inst, line):
                 parts = line.replace('*', '').split(' ')
-                if len(parts) > 2:
-                    rom_translation.append((inst_id, int(parts[1]), int(parts[2])))
-                elif len(parts) > 1:
-                    rom_translation.append((inst_id, int(parts[1], 0)))
-                else:
-                    rom_translation.append((inst_id, 0, 0))
+                add_rom_instruction(inst_id, parts, rom_translation)
             else:
                 print(f"[ERROR] Instruction \"{line}\" can not be resolved to a Native instruction after compiling,"
                       " exiting!")
@@ -508,7 +434,7 @@ def instructions_to_rom(curr_compile_lines: list[str], rom_translation: list[(in
     return True
 
 
-def call_language_handler(curr_compile_lines: list[str], rom_translation: list[(int, int, int)], args: CompilerArgs):
+def call_language_handler(curr_compile_lines: list[str], curr_compile_lines_label: list[str], rom_instructions: list[(int, int, int)], rom_instructions_label: list[(int | str, int | None, int | None)], args: CompilerArgs):
     module = __import__(f"targets.{args.target_lang.upper()}")
     if module is None:
         print(f"[ERROR] Canot find language modul for language \"{args.target_lang}\"")
@@ -522,9 +448,46 @@ def call_language_handler(curr_compile_lines: list[str], rom_translation: list[(
         print(f"[ERROR] Language class \"{args.target_lang}\" did not contain a handler function")
         return
     try:
-        lang_func(curr_compile_lines, rom_translation, args)
+        lang_func(curr_compile_lines, curr_compile_lines_label, rom_instructions, rom_instructions_label, args)
     except TypeError:
         print(f"[ERROR] Handler function has the wrong argument types, or count")
+
+
+def instructions_to_rom_labels(curr_compile_lines_labels: list[str], rom_instructions_labels: list[(int | str, int | None | str, int | None)]):
+    for line in curr_compile_lines_labels:
+        m = re.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", line)
+        if line == '':
+            continue
+        if line.startswith('//'):
+            rom_instructions_labels.append((line, None, None))
+        if m is not None:
+            rom_instructions_labels.append((m, None, None))
+        for inst, inst_id in NATIVE_INSTRUCTIONS.items():
+            if match_instruction(inst, line):
+                parts = line.replace('*', '').split(' ')
+                if inst.find("%label"):
+                    if len(parts) > 2:
+                        rom_instructions_labels.append((inst_id, parts[1], parts[2]))
+                    elif len(parts) > 1:
+                        rom_instructions_labels.append((inst_id, parts[1], 0))
+                    else:
+                        rom_instructions_labels.append((inst_id, 0, 0))
+                else:
+                    add_rom_instruction(inst_id, parts, rom_instructions_labels)
+            else:
+                print(f"[ERROR] Instruction \"{line}\" can not be resolved to a Native instruction after compiling,"
+                      " exiting!")
+                return False
+    return True
+
+
+def add_rom_instruction(inst_id, parts, rom_instructions_labels):
+    if len(parts) > 2:
+        rom_instructions_labels.append((inst_id, int(parts[1]), int(parts[2])))
+    elif len(parts) > 1:
+        rom_instructions_labels.append((inst_id, int(parts[1], 0)))
+    else:
+        rom_instructions_labels.append((inst_id, 0, 0))
 
 
 def compile_file(file_path: str, args: CompilerArgs):
@@ -573,15 +536,18 @@ def compile_file(file_path: str, args: CompilerArgs):
 
     print("[INFO] Macros resolved")
 
-    resolve_labels(curr_compile_lines)
-
-    print("[INFO] Labels resolved")
-
     resolve_variables(curr_compile_lines, variable_memory_pos)
-
     print("[INFO] Variables resolved")
 
-    rom_translation: list[(int, int, int)] = []
-    instructions_to_rom(curr_compile_lines, rom_translation)
+    curr_compile_lines_labels: list[str] = curr_compile_lines.copy()
 
-    call_language_handler(curr_compile_lines, rom_translation, args)
+    resolve_labels(curr_compile_lines)
+    print("[INFO] Labels resolved")
+
+    rom_instructions: list[(int, int, int)] = []
+    rom_instructions_labels: list[(int | str, int | None, int | None)] = []
+    instructions_to_rom(curr_compile_lines, rom_instructions)
+    instructions_to_rom_labels(curr_compile_lines_labels, rom_instructions_labels)
+
+    call_language_handler(curr_compile_lines, curr_compile_lines_labels, rom_instructions, rom_instructions_labels,
+                          args)

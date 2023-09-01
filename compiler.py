@@ -1,7 +1,7 @@
 import os
 import re
 
-from compiler_obj import MacroTypes, Macro, CompilerArgs
+from compiler_obj import MacroTypes, Macro, CompilerArgs, CompilerResult, CompilerResultStatus, CompilerErrorLevel
 
 # %number can be equal to %label, only the compiler deals with %label & %variable and is resolved to %number at
 # compile time
@@ -248,25 +248,25 @@ def next_memory_address(var_count: int, blocks: int, balance: bool, mem_size: in
         return int(address)
 
 
-def get_var_memory_address(lines: list[str], variables: dict[str, int], args: CompilerArgs):
+def get_var_memory_address(lines: list[str], variables: dict[str, int], args: CompilerArgs) -> CompilerResult:
+    shrt_res = CompilerResult.empty()
     line_enumerate = enumerate(lines)
     for line_no, line in line_enumerate:
         if line.startswith("#"):
             if line.find("memorylayout") != -1:
                 if line.find("explicit") != -1:
-                    return True
+                    return CompilerResult.ok()
                 elif line.find("auto") != -1 and line.find("static") != -1:
                     if line.find("incremental") != -1:
                         find_var_static_auto_all(line_enumerate, variables, False, args)
-                        return True
+                        return CompilerResult.ok()
                     elif line.find("balanced") != -1:
                         find_var_static_auto_all(line_enumerate, variables, True, args)
-                        return True
+                        return CompilerResult.ok()
                     else:
-                        print(f"[WARN] No memory balancing type found at #memorylayout ln <{line}> defaulting to "
-                              f"[Incremental]")
                         find_var_static_auto_all(line_enumerate, variables, False, args)
-                        return True
+                        return CompilerResult.warn(f"[WARN] No memory balancing type found at #memorylayout ln <{line}>"
+                                                   f" defaulting to [Incremental]")
                 elif line.find("static") != -1:
                     start_ln = line_no
                     if line.find("incremental") != -1:
@@ -274,18 +274,18 @@ def get_var_memory_address(lines: list[str], variables: dict[str, int], args: Co
                     elif line.find("balanced") != -1:
                         return find_var_static_all(line_enumerate, start_ln, variables, True, args)
                     else:
-                        print(f"[WARN] No memory balancing type found at #memorylayout ln <{start_ln}> defaulting to "
-                              f"[Incremental]")
+                        shrt_res.acumulate(CompilerResult.warn(f"[WARN] No memory balancing type found at "
+                                                               f"#memorylayout ln <{start_ln}> defaulting to ["
+                                                               f"Incremental]"))
                         return find_var_static_all(line_enumerate, start_ln, variables, False, args)
                 else:
-                    print(
+                    shrt_res.acumulate(CompilerResult.warn(
                         f"[WARN] #memorylayout at ln<{line_no}> does not contain a valid variable layout type token ["
                         f"static / static auto / explicit] + address balancing type [incremental / balanced] "
-                        f"continuing search for other #memorylayout sections")
-    print(
+                        f"continuing search for other #memorylayout sections"))
+    return shrt_res.acumulate(CompilerResult.warn(
         "[WARN] No #memorylayout section found or no valid variable layout type token found [static / static auto / "
-        "explicit] + address balancing type [incremental / balanced] defaulting to [static auto incremental]")
-    return True
+        "explicit] + address balancing type [incremental / balanced] defaulting to [static auto incremental]"))
 
 
 def find_var_static_all(line_enumerate: enumerate[str], start_ln: int, variables: dict[str, int], balanced: bool,
@@ -318,7 +318,7 @@ def find_var_static_auto_all(line_enumerate: enumerate[str], variables: dict[str
                 var_count = var_count + 1
 
 
-def get_imported_files(imported_files, lines, file):
+def get_imported_files(imported_files, lines, file) -> CompilerResult:
     include_match = r"<([a-z|0-9|A-Z|.|_|-]+)>"
     for line_no, line in enumerate(lines):
         if line.startswith('#'):
@@ -329,10 +329,9 @@ def get_imported_files(imported_files, lines, file):
                     if os.path.isfile(curr_dir + "/macrodefs/" + match + ".mccpu"):
                         file = open(curr_dir + "/macrodefs/" + match + ".mccpu", "rt")
                         if not file.readable():
-                            print(
+                            return CompilerResult.error(
                                 f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value "
                                 f"\"{line}\" was not found, exiting!")
-                            return False
                         if imported_files.get(match) is not None:
                             continue
                         imported_files[match] = read_lines(file)
@@ -341,23 +340,21 @@ def get_imported_files(imported_files, lines, file):
                     elif os.path.isfile(curr_dir + "/" + match):
                         file = open(curr_dir + "/" + match, "rt")
                         if not file.readable():
-                            print(
+                            return CompilerResult.error(
                                 f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value "
                                 f"\"{line}\" was not found exiting!")
-                            return False
                         if imported_files.get(match) is not None:
                             continue
                         imported_files[match] = read_lines(file)
                         get_imported_files(imported_files, imported_files.get(match), curr_dir + match)
                     else:
-                        print(
+                        return CompilerResult.error(
                             f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value "
                             f"\"{line}\" was not found exiting!")
-                        return False
-    return True
+    return CompilerResult.ok()
 
 
-def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes] | None:
+def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes] | CompilerResult:
     type_reg = r"%[a-zA-Z]*"
     matches: list[str] = re.findall(type_reg, macro_opener)
     macro_types: list[MacroTypes] = []
@@ -375,14 +372,13 @@ def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes] | None:
         elif match == "%registerpointer":
             macro_types.append(MacroTypes.REGISTER_POINTER)
         else:
-            print(
+            return CompilerResult.error(
                 f"[ERROR] macro \"{macro_opener}\" in file \"{file}\" at line <{line_no}> used not valid type "
-                f"\"{match}\" valid are [%label, %variable, %address, %number, %register]")
-            return None
+                f"\"{match}\" valid are [%label, %variable, %address, %number, %register, %registerpointer]")
     return macro_types
 
 
-def load_macros(macros, file, lines: list[str]):
+def load_macros(macros, file, lines: list[str]) -> CompilerResult:
     macro_reg = r"#\s*macro\s*(.+)"
     macro_end_reg = r"#\s*endmacro\s*(.+)?"
     macro_reg_com = re.compile(macro_reg)
@@ -395,8 +391,8 @@ def load_macros(macros, file, lines: list[str]):
         if len(matches.groups()) >= 1:
             macro_opener = matches.group(1)
             macro_args = get_macro_arg_types(macro_opener, file, line_no)
-            if macro_args is None:
-                return False
+            if macro_args is CompilerResult:
+                return macro_args
             macro_top: list[str] = []
             macro_bottom: list[str] = []
             complex_macro = False
@@ -405,8 +401,7 @@ def load_macros(macros, file, lines: list[str]):
             while True:
                 line_no, line = next(lines_iter, (None, None))
                 if line is None:
-                    print(f"[ERROR] Expected #endmacro after #macro in file \"{file}\" at line <{macro_start_line_no}>")
-                    return False
+                    return CompilerResult.error(f"[ERROR] Expected #endmacro after #macro in file \"{file}\" at line <{macro_start_line_no}>")
                 if line.startswith("//"):
                     continue
                 macro_end_matches = macro_end_reg_com.match(line)
@@ -416,9 +411,9 @@ def load_macros(macros, file, lines: list[str]):
                 elif macro_end_matches is not None:
                     if complex_macro:
                         if not (len(macro_end_matches.groups()) >= 1):
-                            print(f"[ERROR] Complex macros (macros using \"...\") need to have a closing expression "
-                                  f"error at #endmacro in file \"{file}\" at line <{line_no}>")
-                            return False
+                            return CompilerResult.error(f"[ERROR] Complex macros (macros using \"...\") need to have "
+                                                        f"a closing expression error at #endmacro in file \"{file}\" "
+                                                        f"at line <{line_no}>")
                         macros[abs(hash(macro_opener))] = Macro(macro_opener, macro_end_matches.group(1), macro_args,
                                                                 macro_top,
                                                                 macro_bottom, complex_macro)
@@ -438,10 +433,10 @@ def load_macros(macros, file, lines: list[str]):
                         macro_top.append(line)
                     else:
                         macro_bottom.append(line)
-    return True
+    return CompilerResult.ok()
 
 
-def match_instruction(inst, line) -> bool | None:
+def match_instruction(inst: str, line: str) -> bool:
     inst = escape_instruction(inst)
     for t, repl in TYPE_REGEX_MATCH_REPLACERS.items():
         inst = inst.replace(t, repl)
@@ -694,11 +689,23 @@ def add_rom_instruction(inst_id, parts, rom_instructions_labels):
         rom_instructions_labels.append((inst_id, 0, 0))
 
 
-def compile_file(file_path: str, args: CompilerArgs):
+def handle_error(res: CompilerResult, args: CompilerArgs) -> CompilerResult | None:
+    print(res.message)
+    match res.status:
+        case CompilerResultStatus.ERROR:
+            return None if args.exit_level == CompilerErrorLevel.NONE else res
+        case CompilerResultStatus.WARNING:
+            return None if args.exit_level == CompilerErrorLevel.ERROR \
+                           or args.exit_level == CompilerErrorLevel.NONE else res
+        case CompilerResultStatus.OK:
+            return None
+
+
+def compile_file(file_path: str, args: CompilerArgs) -> CompilerResult:
     file = open(file_path, "rt")
 
     if not file.readable():
-        return
+        return CompilerResult(CompilerResultStatus.ERROR, "Input File Not Readable")
 
     lines = read_lines(file)
 
@@ -707,8 +714,8 @@ def compile_file(file_path: str, args: CompilerArgs):
 
     imported_files: dict[str, list[str]] = {}
 
-    if not get_imported_files(imported_files, lines, file_path):
-        return
+    if (error_res := handle_error(get_imported_files(imported_files, lines, file_path), args)) is not None:
+        return error_res
 
     for file, file_lines in imported_files.items():
         for file_line_no in range(len(file_lines)):
@@ -716,9 +723,11 @@ def compile_file(file_path: str, args: CompilerArgs):
 
     macros: dict[int, Macro] = {}
     for file, included_lines in imported_files.items():
-        load_macros(macros, file, included_lines)
+        if(error_res := handle_error(load_macros(macros, file, included_lines), args)) is not None:
+            return error_res
 
-    load_macros(macros, file_path, lines)
+    if(error_res := handle_error(load_macros(macros, file_path, lines), args)) is not None:
+        return error_res
 
     variable_memory_pos: dict[str, int] = {}
     if not get_var_memory_address(lines, variable_memory_pos, args):

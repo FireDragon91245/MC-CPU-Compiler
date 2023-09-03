@@ -1,0 +1,16 @@
+
+// loop from x (&r0) to y (&r1) and summ all values
+
+mov &r0, 0x00
+mov &r1, 0x0f
+
+// sum
+mov &r2, 0x00
+
+loop:
+inc &r0
+add &r2, &r0
+cmp &r0, &r1
+jle ~loop
+
+halt

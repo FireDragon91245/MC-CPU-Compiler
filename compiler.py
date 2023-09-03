@@ -1,7 +1,8 @@
 import os
 import re
+import pathlib
 
-from compiler_obj import MacroTypes, Macro, CompilerArgs, CompilerResult, CompilerResultStatus, CompilerErrorLevel
+from compiler_obj import MacroTypes, Macro, CompilerArgs, CompilerResult, CompilerErrorLevels, LanguageTarget
 
 # %number can be equal to %label, only the compiler deals with %label & %variable and is resolved to %number at
 # compile time
@@ -249,68 +250,70 @@ def next_memory_address(var_count: int, blocks: int, balance: bool, mem_size: in
 
 
 def get_var_memory_address(lines: list[str], variables: dict[str, int], args: CompilerArgs) -> CompilerResult:
-    shrt_res = CompilerResult.empty()
+    shrt_res: CompilerResult = CompilerResult.empty()
     line_enumerate = enumerate(lines)
     for line_no, line in line_enumerate:
         if line.startswith("#"):
             if line.find("memorylayout") != -1:
                 if line.find("explicit") != -1:
-                    return CompilerResult.ok()
+                    return shrt_res.not_empty_or_ok()
                 elif line.find("auto") != -1 and line.find("static") != -1:
                     if line.find("incremental") != -1:
-                        find_var_static_auto_all(line_enumerate, variables, False, args)
-                        return CompilerResult.ok()
+                        shrt_res.accumulate(find_var_static_auto_all(line_enumerate, variables, False, args))
+                        return shrt_res.not_empty_or_ok()
                     elif line.find("balanced") != -1:
-                        find_var_static_auto_all(line_enumerate, variables, True, args)
-                        return CompilerResult.ok()
+                        shrt_res.accumulate(find_var_static_auto_all(line_enumerate, variables, True, args))
+                        return shrt_res.not_empty_or_ok()
                     else:
                         find_var_static_auto_all(line_enumerate, variables, False, args)
-                        return CompilerResult.warn(f"[WARN] No memory balancing type found at #memorylayout ln <{line}>"
-                                                   f" defaulting to [Incremental]")
+                        return shrt_res.accumulate(
+                            CompilerResult.warn(f"[WARN] No memory balancing type found at #memorylayout ln <{line}>"
+                                                f" defaulting to [Incremental]"))
                 elif line.find("static") != -1:
                     start_ln = line_no
                     if line.find("incremental") != -1:
-                        return find_var_static_all(line_enumerate, start_ln, variables, False, args)
+                        return shrt_res.accumulate(
+                            find_var_static_all(line_enumerate, start_ln, variables, False, args))
                     elif line.find("balanced") != -1:
-                        return find_var_static_all(line_enumerate, start_ln, variables, True, args)
+                        return shrt_res.accumulate(find_var_static_all(line_enumerate, start_ln, variables, True, args))
                     else:
-                        shrt_res.acumulate(CompilerResult.warn(f"[WARN] No memory balancing type found at "
-                                                               f"#memorylayout ln <{start_ln}> defaulting to ["
-                                                               f"Incremental]"))
-                        return find_var_static_all(line_enumerate, start_ln, variables, False, args)
+                        shrt_res.accumulate(CompilerResult.warn(f"[WARN] No memory balancing type found at "
+                                                                f"#memorylayout ln <{start_ln}> defaulting to ["
+                                                                f"Incremental]"))
+                        return shrt_res.accumulate(
+                            find_var_static_all(line_enumerate, start_ln, variables, False, args))
                 else:
-                    shrt_res.acumulate(CompilerResult.warn(
+                    shrt_res.accumulate(CompilerResult.warn(
                         f"[WARN] #memorylayout at ln<{line_no}> does not contain a valid variable layout type token ["
                         f"static / static auto / explicit] + address balancing type [incremental / balanced] "
                         f"continuing search for other #memorylayout sections"))
-    return shrt_res.acumulate(CompilerResult.warn(
+    return shrt_res.accumulate(CompilerResult.warn(
         "[WARN] No #memorylayout section found or no valid variable layout type token found [static / static auto / "
         "explicit] + address balancing type [incremental / balanced] defaulting to [static auto incremental]"))
 
 
 def find_var_static_all(line_enumerate: enumerate[str], start_ln: int, variables: dict[str, int], balanced: bool,
-                        args: CompilerArgs):
+                        args: CompilerArgs) -> CompilerResult:
     var_count = 0
     while True:
         line_no, line = next(line_enumerate, (None, None))
         if line is None:
-            print(f"[ERROR] Expected #endmemorylayout after #ememorylayout at ln <{start_ln}>")
-            return False
+            return CompilerResult.error("[ERROR] Expected #endmemorylayout after #ememorylayout at ln <{start_ln}>")
         if line.find("#endmemorylayout") != -1:
-            return True
+            return CompilerResult.ok()
         variables[line] = next_memory_address(var_count, args.memory_blocks, balanced, args.mem_size)
         var_count = var_count + 1
 
 
 def find_var_static_auto_all(line_enumerate: enumerate[str], variables: dict[str, int], balanced: bool,
-                             args: CompilerArgs) -> None:
+                             args: CompilerArgs) -> CompilerResult:
     re_var = r"\*([a-zA-Z][a-zA-Z0-9]*)"
     re_var_comp = re.compile(re_var)
     var_count = 0
     while True:
         line_no, line = next(line_enumerate, (None, None))
         if line is None:
-            return
+            return CompilerResult.ok()
         matches = re_var_comp.findall(line)
         for match in matches:
             if variables.get(match) is None:
@@ -378,7 +381,7 @@ def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes] | Compi
     return macro_types
 
 
-def load_macros(macros, file, lines: list[str]) -> CompilerResult:
+def load_macros(macros: dict[int, Macro], file, lines: list[str]) -> CompilerResult:
     macro_reg = r"#\s*macro\s*(.+)"
     macro_end_reg = r"#\s*endmacro\s*(.+)?"
     macro_reg_com = re.compile(macro_reg)
@@ -391,7 +394,7 @@ def load_macros(macros, file, lines: list[str]) -> CompilerResult:
         if len(matches.groups()) >= 1:
             macro_opener = matches.group(1)
             macro_args = get_macro_arg_types(macro_opener, file, line_no)
-            if macro_args is CompilerResult:
+            if isinstance(macro_args, CompilerResult):
                 return macro_args
             macro_top: list[str] = []
             macro_bottom: list[str] = []
@@ -401,7 +404,8 @@ def load_macros(macros, file, lines: list[str]) -> CompilerResult:
             while True:
                 line_no, line = next(lines_iter, (None, None))
                 if line is None:
-                    return CompilerResult.error(f"[ERROR] Expected #endmacro after #macro in file \"{file}\" at line <{macro_start_line_no}>")
+                    return CompilerResult.error(
+                        f"[ERROR] Expected #endmacro after #macro in file \"{file}\" at line <{macro_start_line_no}>")
                 if line.startswith("//"):
                     continue
                 macro_end_matches = macro_end_reg_com.match(line)
@@ -514,7 +518,7 @@ def resolve_macro(curr_compile_lines: list[str], line_no: int, macro: Macro, mac
         return line_no + len(macro.macro_top)
 
 
-def resolve_macros(curr_compile_lines: list[str], macros: dict[int, Macro]) -> bool:
+def resolve_macros(curr_compile_lines: list[str], macros: dict[int, Macro]) -> CompilerResult:
     for line_no in range(len(curr_compile_lines)):
         found = False
         if curr_compile_lines[line_no] == '':
@@ -523,7 +527,7 @@ def resolve_macros(curr_compile_lines: list[str], macros: dict[int, Macro]) -> b
             if match_instruction(macro.macro_opener, curr_compile_lines[line_no]):
                 line_no = resolve_macro(curr_compile_lines, line_no, macro, macro_id, list(macros.values()))
                 if line_no == -1:
-                    return False
+                    assert False  # Unknwo error or cause for line_no investigate if trigered
                 found = True
                 break
         if found:
@@ -539,11 +543,10 @@ def resolve_macros(curr_compile_lines: list[str], macros: dict[int, Macro]) -> b
         if curr_compile_lines[line_no].startswith("//"):
             continue
         if not found:
-            print(
+            return CompilerResult.error(
                 f"[ERROR] can not resolve instruction \"{curr_compile_lines[line_no]}\" "
                 f"to any macro or std instruction")
-            return False
-    return True
+    return CompilerResult.ok()
 
 
 def write_file(file_name, curr_compile_lines):
@@ -553,26 +556,27 @@ def write_file(file_name, curr_compile_lines):
     file.close()
 
 
-def copy_lines_exclude_compiler_instructions(curr_compile_lines: list[str], lines: list[str]) -> bool:
-    for line_no in range(len(lines)):
-        if lines[line_no].startswith("#memorylayout"):
-            line_no_start = line_no
-            while lines[line_no].find("#endmemorylayout") == -1:
-                line_no = line_no + 1
-                if line_no >= len(lines):
-                    print(f"[ERROR] expected #endmemorylayout after #memorylayout at ln <{line_no_start}>")
-                    return False
-        elif lines[line_no].startswith("#macro"):
-            line_no_start = line_no
-            while not lines[line_no].startswith("#endmacro"):
-                line_no = line_no + 1
-                if line_no >= len(lines):
-                    print(f"[ERROR] expected #endmacro after #macro at ln <{line_no_start}>")
-                    return False
-        elif lines[line_no].startswith("#"):
+def copy_lines_exclude_compiler_instructions(curr_compile_lines: list[str], lines: list[str]) -> CompilerResult:
+    ln_enum = enumerate(lines)
+    for ln_no, ln in ln_enum:
+        if ln.startswith("#memorylayout"):
+            line_no_start = ln_no
+            while ln.find("#endmemorylayout") == -1:
+                ln_no, ln = next(ln_enum, (None, None))
+                if ln is None:
+                    return CompilerResult.error(
+                        f"[ERROR] expected #endmemorylayout after #memorylayout at ln <{line_no_start}>")
+        elif ln.startswith("#macro"):
+            line_no_start = ln_no
+            while not ln.startswith("#endmacro"):
+                ln_no, ln = next(ln_enum, (None, None))
+                if ln is None:
+                    return CompilerResult.error(f"[ERROR] expected #endmacro after #macro at ln <{line_no_start}>")
+        elif ln.startswith("#"):
             continue
         else:
-            curr_compile_lines.append(lines[line_no])
+            curr_compile_lines.append(ln)
+    return CompilerResult.ok()
 
 
 def resolve_labels(curr_compile_lines: list[str]) -> bool:
@@ -613,7 +617,7 @@ def resolve_variables(curr_compile_lines: list[str], variable_memory_pos: dict[s
             curr_compile_lines[line_no] = curr_compile_lines[line_no].replace(f"*{var}", f"*{address:.0f}")
 
 
-def instructions_to_rom(curr_compile_lines: list[str], rom_translation: list[(int, int, int)]) -> bool:
+def instructions_to_rom(curr_compile_lines: list[str], rom_translation: list[(int, int, int)]) -> CompilerResult:
     for line in curr_compile_lines:
         if line == '':
             continue
@@ -621,46 +625,59 @@ def instructions_to_rom(curr_compile_lines: list[str], rom_translation: list[(in
             continue
         for inst, inst_id in NATIVE_INSTRUCTIONS.items():
             if match_instruction(inst, line):
-                parts = line.replace('*', '').split(' ')
-                add_rom_instruction(inst_id, parts, rom_translation)
-            else:
-                print(f"[ERROR] Instruction \"{line}\" can not be resolved to a Native instruction after compiling,"
-                      " exiting!")
-                return False
-    return True
+                parts = line.split(' ')
+                if not add_rom_instruction(inst_id, parts, rom_translation):
+                    return CompilerResult.error(
+                        f"[ERROR] instruction \"{line}\" contains parts that can not be converted to rom instructions (Probably compiler problem)")
+                break
+        else:
+            return CompilerResult.error(
+                f"[ERROR] Instruction \"{line}\" can not be resolved to a Native instruction after compiling,"
+                f" exiting! (Probably compiler problem)")
+    return CompilerResult.ok()
 
 
 def call_language_handler(curr_compile_lines: list[str], curr_compile_lines_label: list[str],
                           rom_instructions: list[(int, int, int)],
-                          rom_instructions_label: list[(int | str, int | None, int | None)], args: CompilerArgs):
+                          rom_instructions_label: list[(int | str, int | None, int | None)],
+                          args: CompilerArgs) -> CompilerResult:
     module = __import__(f"targets.{args.target_lang.upper()}")
     if module is None:
-        print(f"[ERROR] Canot find language modul for language \"{args.target_lang}\"")
-        return
-    lang_class = getattr(module, args.target_lang.upper(), None)
+        return CompilerResult.error(f"[ERROR] Canot find language modul for language \"{args.target_lang}\"")
+    lang_module = getattr(module, args.target_lang.upper(), None)
+    if lang_module is None:
+        return CompilerResult.error(f"[ERROR] Language modul \"{args.target_lang}\" did not contain a handler class")
+    lang_class = getattr(lang_module, args.target_lang.upper(), None)
     if lang_class is None:
-        print(f"[ERROR] Language modul \"{args.target_lang}\" did not contain a handler class")
-        return
-    lang_func = getattr(lang_class, "transpile", None)
+        return CompilerResult.error(f"[ERROR] Language modul \"{args.target_lang}\" did not contain a handler class")
+    lang_func = getattr(lang_class, f"{LanguageTarget.transpile.__name__}", None)
     if lang_func is None:
-        print(f"[ERROR] Language class \"{args.target_lang}\" did not contain a handler function")
-        return
+        return CompilerResult.error(f"[ERROR] Language class \"{args.target_lang}\" did not contain a handler function")
     try:
-        lang_func(curr_compile_lines, curr_compile_lines_label, rom_instructions, rom_instructions_label, args)
-    except TypeError:
-        print(f"[ERROR] Handler function has the wrong argument types, or count")
+        res = lang_func(lang_class, curr_compile_lines, curr_compile_lines_label, rom_instructions,
+                        rom_instructions_label, args, pathlib.Path(__file__).parent.resolve())
+        if not isinstance(res, CompilerResult):
+            raise TypeError(
+                f"{args.target_lang.upper()}.{LanguageTarget.transpile.__name__}() return type expected {CompilerResult.__module__}.{CompilerResult.__name__} got {type(res).__module__}.{type(res).__name__}")
+        return res
+    except TypeError as e:
+        return CompilerResult.error(
+            f"[ERROR] Handler function for {args.target_lang} has the wrong argument types, count or return Type, Details: {e.__str__()}")
 
 
 def instructions_to_rom_labels(curr_compile_lines_labels: list[str],
-                               rom_instructions_labels: list[(int | str, int | None | str, int | None)]):
+                               rom_instructions_labels: list[
+                                   (int | str, int | None | str, int | None)]) -> CompilerResult:
     for line in curr_compile_lines_labels:
         m = re.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", line)
         if line == '':
             continue
         if line.startswith('//'):
             rom_instructions_labels.append((line, None, None))
+            continue
         if m is not None:
             rom_instructions_labels.append((m, None, None))
+            continue
         for inst, inst_id in NATIVE_INSTRUCTIONS.items():
             if match_instruction(inst, line):
                 parts = line.replace('*', '').split(' ')
@@ -672,50 +689,96 @@ def instructions_to_rom_labels(curr_compile_lines_labels: list[str],
                     else:
                         rom_instructions_labels.append((inst_id, 0, 0))
                 else:
-                    add_rom_instruction(inst_id, parts, rom_instructions_labels)
-            else:
-                print(f"[ERROR] Instruction \"{line}\" can not be resolved to a Native instruction after compiling,"
-                      " exiting!")
-                return False
+                    if not add_rom_instruction(inst_id, parts, rom_instructions_labels):
+                        return CompilerResult.error(
+                            f"[ERROR] instruction \"{line}\" contains parts that can not be converted to rom instructions (Probably compiler problem)")
+                break
+        else:
+            return CompilerResult.error(
+                f"[ERROR] Instruction \"{line}\" can not be resolved to a Native instruction after compiling,"
+                " exiting!")
+    return CompilerResult.ok()
+
+
+def num_to_int(param: str) -> int:
+    return int(param, 0)
+
+
+def register_to_int(param: str) -> int:
+    return int(re.findall(r"&r([0-9]{1,3})|$", param)[0])
+
+
+def inst_arg_to_rom(param: str) -> int | str:
+    if (match := re.match(TYPE_REGEX_MATCH_REPLACERS["%number"], param)) is not None:
+        return num_to_int(match.group(1))
+    elif (match := re.match(TYPE_REGEX_MATCH_REPLACERS["%register"], param)) is not None:
+        return register_to_int(match.group(1))
+    elif (match := re.match(TYPE_REGEX_MATCH_REPLACERS["%address"], param)) is not None:
+        return num_to_int(match.group(1).replace("*", ""))
+    elif (match := re.match(TYPE_REGEX_MATCH_REPLACERS["%registerpointer"], param)) is not None:
+        return register_to_int(match.group(1))
+    elif (match := re.match(TYPE_REGEX_MATCH_REPLACERS["%label"], param)) is not None:
+        return match.group(1)
+    else:
+        return -1
+
+
+def add_rom_instruction(inst_id, parts, rom_instructions_labels) -> bool:
+    if len(parts) > 2:
+        part_1 = inst_arg_to_rom(parts[1])
+        if part_1 == -1:
+            return False
+        part_2 = inst_arg_to_rom(parts[2])
+        if part_2 == -1:
+            return False
+        rom_instructions_labels.append((inst_id, part_1, part_2))
+    elif len(parts) > 1:
+        part_1 = inst_arg_to_rom(parts[1])
+        if part_1 == -1:
+            return False
+        rom_instructions_labels.append((inst_id, part_1, 0))
+    else:
+        rom_instructions_labels.append((inst_id, 0, 0))
     return True
 
 
-def add_rom_instruction(inst_id, parts, rom_instructions_labels):
-    if len(parts) > 2:
-        rom_instructions_labels.append((inst_id, int(parts[1]), int(parts[2])))
-    elif len(parts) > 1:
-        rom_instructions_labels.append((inst_id, int(parts[1], 0)))
-    else:
-        rom_instructions_labels.append((inst_id, 0, 0))
-
-
 def handle_error(res: CompilerResult, args: CompilerArgs) -> CompilerResult | None:
-    print(res.message)
+    if res.status.is_severity_higher(CompilerErrorLevels.OK):
+        if res.message_count() == 1:
+            print(f"{res.status} {res.message}")
+        else:
+            for msg in res.messages:
+                    print(f"{msg[0]} {msg[1]}")
     match res.status:
-        case CompilerResultStatus.ERROR:
-            return None if args.exit_level == CompilerErrorLevel.NONE else res
-        case CompilerResultStatus.WARNING:
-            return None if args.exit_level == CompilerErrorLevel.ERROR \
-                           or args.exit_level == CompilerErrorLevel.NONE else res
-        case CompilerResultStatus.OK:
+        case CompilerErrorLevels.ERROR:
+            return None if args.exit_level == CompilerErrorLevels.NONE else res
+        case CompilerErrorLevels.WARNING:
+            return None if args.exit_level == CompilerErrorLevels.ERROR \
+                           or args.exit_level == CompilerErrorLevels.NONE else res
+        case CompilerErrorLevels.OK:
             return None
 
 
 def compile_file(file_path: str, args: CompilerArgs) -> CompilerResult:
+    result: CompilerResult = CompilerResult.empty()
+
     file = open(file_path, "rt")
 
     if not file.readable():
-        return CompilerResult(CompilerResultStatus.ERROR, "Input File Not Readable")
+        if handle_error(result.accumulate(CompilerResult.error("Input File Not Readable")), args) is not None:
+            return result
 
     lines = read_lines(file)
+
+    file.close()
 
     for ind, val in enumerate(lines):
         lines[ind] = val.lower().strip()
 
     imported_files: dict[str, list[str]] = {}
 
-    if (error_res := handle_error(get_imported_files(imported_files, lines, file_path), args)) is not None:
-        return error_res
+    if handle_error(result.accumulate(get_imported_files(imported_files, lines, file_path)), args) is not None:
+        return result
 
     for file, file_lines in imported_files.items():
         for file_line_no in range(len(file_lines)):
@@ -723,44 +786,57 @@ def compile_file(file_path: str, args: CompilerArgs) -> CompilerResult:
 
     macros: dict[int, Macro] = {}
     for file, included_lines in imported_files.items():
-        if(error_res := handle_error(load_macros(macros, file, included_lines), args)) is not None:
-            return error_res
+        if handle_error(result.accumulate(load_macros(macros, file, included_lines)), args) is not None:
+            return result
 
-    if(error_res := handle_error(load_macros(macros, file_path, lines), args)) is not None:
-        return error_res
+    if handle_error(result.accumulate(load_macros(macros, file_path, lines)), args) is not None:
+        return result
 
     variable_memory_pos: dict[str, int] = {}
-    if not get_var_memory_address(lines, variable_memory_pos, args):
-        return
+    if handle_error(result.accumulate(get_var_memory_address(lines, variable_memory_pos, args)), args) is not None:
+        return result
 
     curr_compile_lines: list[str] = []
 
-    copy_lines_exclude_compiler_instructions(curr_compile_lines, lines)
+    if handle_error(result.accumulate(copy_lines_exclude_compiler_instructions(curr_compile_lines, lines)),
+                    args) is not None:
+        return result
 
     depth_limit = 1_000
     curr_depth = 0
     while not is_only_native_instructions(curr_compile_lines):
         curr_depth = curr_depth + 1
-        if not resolve_macros(curr_compile_lines, macros):
-            return
+        if handle_error(result.accumulate(resolve_macros(curr_compile_lines, macros)), args) is not None:
+            return result
         if curr_depth >= depth_limit:
-            print(f"[ERROR] recursive macro? encountered depth of {depth_limit} and still found unresolved macros.")
-            return
+            if handle_error(result.accumulate(CompilerResult.error(
+                    "[ERROR] recursive macro? encountered depth of {depth_limit} and still found unresolved macros.")),
+                    args) is None:
+                return result
 
-    print("[INFO] Macros resolved")
+    handle_error(result.accumulate(CompilerResult.info("[INFO] Macros resolved")), args)
 
     resolve_variables(curr_compile_lines, variable_memory_pos)
-    print("[INFO] Variables resolved")
+    handle_error(result.accumulate(CompilerResult.info("[INFO] Variables resolved")), args)
 
     curr_compile_lines_labels: list[str] = curr_compile_lines.copy()
 
     resolve_labels(curr_compile_lines)
-    print("[INFO] Labels resolved")
+    handle_error(result.accumulate(CompilerResult.info("[INFO] Labels resolved")), args)
 
     rom_instructions: list[(int, int, int)] = []
     rom_instructions_labels: list[(int | str, int | None, int | None)] = []
-    instructions_to_rom(curr_compile_lines, rom_instructions)
-    instructions_to_rom_labels(curr_compile_lines_labels, rom_instructions_labels)
 
-    call_language_handler(curr_compile_lines, curr_compile_lines_labels, rom_instructions, rom_instructions_labels,
-                          args)
+    if handle_error(result.accumulate(instructions_to_rom(curr_compile_lines, rom_instructions)), args) is not None:
+        return result
+    if handle_error(result.accumulate(instructions_to_rom_labels(curr_compile_lines_labels, rom_instructions_labels)),
+                    args) is not None:
+        return result
+
+    if handle_error(result.accumulate(
+            call_language_handler(curr_compile_lines, curr_compile_lines_labels, rom_instructions,
+                                  rom_instructions_labels,
+                                  args)), args) is not None:
+        return result
+
+    return result.not_empty_or_ok()

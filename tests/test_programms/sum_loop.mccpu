@@ -13,6 +13,6 @@ loop:
     inc &r0
     add &r2, &r0
     cmp &r0, &r1
-    js ~loop
+    jle ~loop
 
 halt

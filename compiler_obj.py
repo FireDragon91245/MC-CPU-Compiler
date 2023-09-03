@@ -1,4 +1,5 @@
 from enum import Enum
+from pathlib import Path
 
 
 class MacroTypes(Enum):
@@ -10,20 +11,15 @@ class MacroTypes(Enum):
     REGISTER_POINTER = 6
 
 
-class CompilerResultStatus(Enum):
-    OK = 1
-    WARNING = 2
-    ERROR = 3
+class CompilerErrorLevels(Enum):
+    INFO = 1
+    OK = 2
+    WARNING = 3
+    ERROR = 4
+    NONE = 5
 
     def is_severity_higher(self, other):
         return self.value > other.value
-
-
-class CompilerErrorLevel(Enum):
-    ERROR = 1
-    WARNING = 2
-    INFO = 3
-    NONE = 4
 
 
 class Macro:
@@ -38,11 +34,16 @@ class Macro:
         self.macro_opener = macro_opener
         self.macro_no = 0
 
+    def __cmp__(self, other):
+        return self.complex_macro == other.complex_macro and self.macro_bottom == other.macro_bottom and self.macro_top == other.macro_top and self.macro_args == other.macro_args and self.macro_closer == other.macro_closer and self.macro_opener == other.macro_opener
+        
+
 
 class CompilerArgs:
 
-    def __init__(self, target_lang: str, mem_size: int, memory_blocks: int, stack_size: int,
-                 register_count: int, exit_level: CompilerErrorLevel) -> None:
+    def __init__(self, target_lang: str, mem_size: int, memory_blocks: int, stack_size: int, register_count: int,
+                 exit_level: CompilerErrorLevels, out_file: str) -> None:
+        self.out_file = out_file
         self.exit_level = exit_level
         self.register_count = register_count
         self.memory_blocks = memory_blocks
@@ -51,44 +52,61 @@ class CompilerArgs:
         self.stack_size = stack_size
 
 
-class LanguageTarget:
-
-    def transpile(self, compile_lines: list[str], compile_lines_with_labels_comments: list[str], rom_instructions: list[(int, int, int)], rom_instructions_with_labels_comments: list[(int | str, int | None, int | None)], args: CompilerArgs):
-        pass
-
-
 class CompilerResult:
 
-    def __init__(self, status: CompilerResultStatus | None, message: str | None) -> None:
+    def __init__(self, status: CompilerErrorLevels | None, message: str | None) -> None:
         self.message = message
         self.status = status
-        self.messages: list[(CompilerResultStatus, str)] = []
+        self.messages: list[(CompilerErrorLevels, str)] = []
 
     @staticmethod
     def ok():
-        return CompilerResult(CompilerResultStatus.OK, "")
+        return CompilerResult(CompilerErrorLevels.OK, "")
 
     @staticmethod
     def error(message: str):
-        return CompilerResult(CompilerResultStatus.ERROR, message)
+        return CompilerResult(CompilerErrorLevels.ERROR, message)
 
     @staticmethod
     def warn(message: str):
-        return CompilerResult(CompilerResultStatus.WARNING, message)
+        return CompilerResult(CompilerErrorLevels.WARNING, message)
 
-    def acumulate(self, other):
-        if self.message is None and self.status is None:
-            self.status = other.status
-            self.message = other.message
-            return
+    @staticmethod
+    def info(message: str):
+        return CompilerResult(CompilerErrorLevels.INFO, message)
 
-        if len(self.messages) == 0:
-            self.messages.append((self.status, self.message))
+    def accumulate(self, other):
 
-        if other.status.is_severity_higher(self.status):
-            self.status = other.status
+        if other.status is None:
+            return self
+        if other.message_count() == 1:
+            if self.status is None:
+                self.status = other.status
+                self.message = other.message
+                return self
 
-        self.messages.append((other.status, other.message))
+            if len(self.messages) == 0:
+                self.messages.append((self.status, self.message))
+
+            if other.status.is_severity_higher(self.status):
+                self.status = other.status
+
+                self.messages.append((other.status, other.message))
+        else:
+            for sev, msg in other.messages:
+                if self.status is None:
+                    self.status = sev
+                    self.message = msg
+                    continue
+
+                if len(self.messages) == 0:
+                    self.messages.append((sev, msg))
+
+                if sev.is_severity_higher(self.status):
+                    self.status = sev
+
+                    self.messages.append((sev, msg))
+        return self
 
     def message_count(self) -> int:
         return 1 if len(self.messages) == 0 else len(self.messages)
@@ -102,6 +120,18 @@ class CompilerResult:
                 res += f"[{msg[0]}] {msg[1]}\n"
             return res
 
-
-    def empty(self):
+    @staticmethod
+    def empty():
         return CompilerResult(None, None)
+
+    def not_empty_or_ok(self):
+        return self if self.status is not None else self.ok()
+
+
+class LanguageTarget:
+
+    def transpile(self, compile_lines: list[str], compile_lines_with_labels_comments: list[str],
+                  rom_instructions: list[(int, int, int)],
+                  rom_instructions_with_labels_comments: list[(int | str, int | None, int | None)],
+                  args: CompilerArgs, compiler_root_dir: Path) -> CompilerResult:
+        pass

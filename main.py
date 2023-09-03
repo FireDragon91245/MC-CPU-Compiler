@@ -3,11 +3,18 @@ import os
 import argparse
 
 import compiler
-from compiler_obj import CompilerArgs, CompilerErrorLevel
+from compiler_obj import CompilerArgs, CompilerErrorLevels
 
 
 def list_format(to_format: list, format_str: str):
     return ', '.join(['%s'] * len(to_format)) % tuple(to_format)
+
+
+def error_level(arg):
+    try:
+        return CompilerErrorLevels[arg]
+    except KeyError:
+        raise argparse.ArgumentTypeError(f"Invalid CompilerErrorLevels value: {arg}")
 
 
 parser = argparse.ArgumentParser(prog="MCCPU-Compiler", description="Compile MCCPU source file to target language")
@@ -19,17 +26,19 @@ parser.add_argument("-mb", "--memoryBlocks", type=int, help="the count of blocks
                     default=8, required=False, dest="blocks")
 parser.add_argument("-s", "--stack", type=int, help="the size of the stack in bytes", default=2 ** 6,
                     required=False, dest="stack")
-parser.add_argument("-r", "--registers", type=int, help="define how many registers are avaidable", default=32,
+parser.add_argument("-r", "--registers", type=int, help="define how many registers are available", default=32,
                     required=False, dest="registers")
-parser.add_argument("-el", "--exitLevel", type=CompilerErrorLevel
-                    , help="define at what error level the compiler should exit",
-                    choices=[member for member in CompilerErrorLevel if member != CompilerErrorLevel.INFO],
-                    default=CompilerErrorLevel.ERROR, required=False, dest="exitLevel")
+parser.add_argument("-el", "--exitLevel", type=error_level,
+                    help="define at what error level the compiler should exit",
+                    choices=[CompilerErrorLevels.WARNING, CompilerErrorLevels.ERROR, CompilerErrorLevels.NONE],
+                    default=CompilerErrorLevels.ERROR, required=False, dest="exitLevel")
+parser.add_argument("-o", "--output", type=str, help="define the name of the output file (Not including extension, extension is chosen by target)",
+                    required=False, dest="out", default="out")
 parser.add_argument("file")
 
 parsed = parser.parse_args(sys.argv[1:])
 args = CompilerArgs(target_lang=parsed.language, mem_size=parsed.memory, stack_size=parsed.stack,
-                    memory_blocks=parsed.blocks, register_count=parsed.registers, exit_level=parsed.exitLevel)
+                    memory_blocks=parsed.blocks, register_count=parsed.registers, exit_level=parsed.exitLevel, out_file=parsed.out)
 
 # Compiler settings and CPU specs
 COMPILER_VERSION = "1.0-wip"
@@ -51,7 +60,9 @@ if len(sys.argv) <= 1:
     exit(0)
 
 if os.path.exists(parsed.file):
-    compiler.compile_file(parsed.file, args)
+    res = compiler.compile_file(parsed.file, args)
+    if res.status == CompilerErrorLevels.OK:
+        print("Compiled Successfully")
 else:
     print(f"Source file: \"{parsed.file}\" was not found, exiting!")
     exit(0)

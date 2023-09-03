@@ -1,0 +1,18 @@
+#memorylayout static auto incremental
+#endmemorylayout
+
+#macro zero %register
+    mov %1, 0
+#endmacro
+#macro zero %address
+    mov %1, 0
+#endmacro
+#macro zero %variable
+    mov %1, 0
+#endmacro
+
+zero &r0
+zero *TestVar
+zero *0x02
+
+halt

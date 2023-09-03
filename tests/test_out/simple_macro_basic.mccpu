@@ -1,0 +1,7 @@
+
+
+mov &r0, 0
+mov *0, 0
+mov *0x02, 0
+
+halt

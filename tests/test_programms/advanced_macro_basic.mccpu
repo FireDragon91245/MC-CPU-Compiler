@@ -1,0 +1,16 @@
+#memorylayout static auto incremental
+#endmemorylayout
+
+#macro if(%register == 0){
+    #comment if start
+    cmp %1, 0
+    je ~ifend_%__macro_id_%__macro_no
+    ...
+    ifend_%__macro_id_%__macro_no:
+    #comment if end
+#endmacro }
+
+if(&r1 == 0){
+    mov &r1, 1
+}
+halt

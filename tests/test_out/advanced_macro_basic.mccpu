@@ -1,0 +1,9 @@
+
+
+// if start
+cmp &r1, 0
+je ~ifend_9219931050903909214_1
+mov &r1, 1
+ifend_9219931050903909214_1:
+// if end
+halt

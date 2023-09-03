@@ -1,0 +1,18 @@
+
+
+mov &r1, 1
+mov &r2, 2
+
+// if start 1
+cmp &r1, &r2
+je ~ifend_109182455505645274_1
+mul &r1, &r2
+// if start 2
+cmp &r1, &r2
+je ~ifend_109182455505645274_2
+mul &r1, &r2
+// if end 2
+ifend_109182455505645274_2:
+// if end 1
+ifend_109182455505645274_1:
+halt

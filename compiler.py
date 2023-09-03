@@ -1,6 +1,6 @@
 import os
-import re
 import pathlib
+import re
 
 from compiler_obj import MacroTypes, Macro, CompilerArgs, CompilerResult, CompilerErrorLevels, LanguageTarget
 
@@ -628,7 +628,8 @@ def instructions_to_rom(curr_compile_lines: list[str], rom_translation: list[(in
                 parts = line.split(' ')
                 if not add_rom_instruction(inst_id, parts, rom_translation):
                     return CompilerResult.error(
-                        f"[ERROR] instruction \"{line}\" contains parts that can not be converted to rom instructions (Probably compiler problem)")
+                        f"[ERROR] instruction \"{line}\" contains parts that can not be converted to rom instructions"
+                        f" (Probably compiler problem)")
                 break
         else:
             return CompilerResult.error(
@@ -658,11 +659,14 @@ def call_language_handler(curr_compile_lines: list[str], curr_compile_lines_labe
                         rom_instructions_label, args, pathlib.Path(__file__).parent.resolve())
         if not isinstance(res, CompilerResult):
             raise TypeError(
-                f"{args.target_lang.upper()}.{LanguageTarget.transpile.__name__}() return type expected {CompilerResult.__module__}.{CompilerResult.__name__} got {type(res).__module__}.{type(res).__name__}")
+                f"{args.target_lang.upper()}.{LanguageTarget.transpile.__name__}() return type expected "
+                f"{CompilerResult.__module__}.{CompilerResult.__name__} got"
+                f" {type(res).__module__}.{type(res).__name__}")
         return res
     except TypeError as e:
         return CompilerResult.error(
-            f"[ERROR] Handler function for {args.target_lang} has the wrong argument types, count or return Type, Details: {e.__str__()}")
+            f"[ERROR] Handler function for {args.target_lang} has the wrong argument types, count or return Type,"
+            f" Details: {e.__str__()}")
 
 
 def instructions_to_rom_labels(curr_compile_lines_labels: list[str],
@@ -691,7 +695,8 @@ def instructions_to_rom_labels(curr_compile_lines_labels: list[str],
                 else:
                     if not add_rom_instruction(inst_id, parts, rom_instructions_labels):
                         return CompilerResult.error(
-                            f"[ERROR] instruction \"{line}\" contains parts that can not be converted to rom instructions (Probably compiler problem)")
+                            f"[ERROR] instruction \"{line}\" contains parts that can not be converted to rom"
+                            f" instructions (Probably compiler problem)")
                 break
         else:
             return CompilerResult.error(

@@ -35,7 +35,9 @@ class Macro:
         self.macro_no = 0
 
     def __cmp__(self, other):
-        return self.complex_macro == other.complex_macro and self.macro_bottom == other.macro_bottom and self.macro_top == other.macro_top and self.macro_args == other.macro_args and self.macro_closer == other.macro_closer and self.macro_opener == other.macro_opener
+        return self.complex_macro == other.complex_macro and self.macro_bottom == other.macro_bottom and\
+            self.macro_top == other.macro_top and self.macro_args == other.macro_args and\
+            self.macro_closer == other.macro_closer and self.macro_opener == other.macro_opener
 
 
 class CompilerArgs:

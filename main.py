@@ -32,13 +32,15 @@ parser.add_argument("-el", "--exitLevel", type=error_level,
                     help="define at what error level the compiler should exit",
                     choices=[CompilerErrorLevels.WARNING, CompilerErrorLevels.ERROR, CompilerErrorLevels.NONE],
                     default=CompilerErrorLevels.ERROR, required=False, dest="exitLevel")
-parser.add_argument("-o", "--output", type=str, help="define the name of the output file (Not including extension, extension is chosen by target)",
+parser.add_argument("-o", "--output", type=str, help="define the name of the output file (Not including extension,"
+                                                     " extension is chosen by target)",
                     required=False, dest="out", default="out")
 parser.add_argument("file")
 
 parsed = parser.parse_args(sys.argv[1:])
 args = CompilerArgs(target_lang=parsed.language, mem_size=parsed.memory, stack_size=parsed.stack,
-                    memory_blocks=parsed.blocks, register_count=parsed.registers, exit_level=parsed.exitLevel, out_file=parsed.out)
+                    memory_blocks=parsed.blocks, register_count=parsed.registers, exit_level=parsed.exitLevel,
+                    out_file=parsed.out)
 
 # Compiler settings and CPU specs
 COMPILER_VERSION = "1.0-wip"

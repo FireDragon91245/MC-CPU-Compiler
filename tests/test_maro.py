@@ -1,7 +1,8 @@
 import re
 import unittest
 
-from compiler import resolve_args, TYPE_REGEX_MATCH_REPLACERS, resolve_macro, resolve_macros, load_macros, copy_lines_exclude_compiler_instructions
+from compiler import resolve_args, TYPE_REGEX_MATCH_REPLACERS, resolve_macro, \
+    resolve_macros, load_macros, copy_lines_exclude_compiler_instructions
 from compiler_obj import Macro, MacroTypes, CompilerErrorLevels
 
 

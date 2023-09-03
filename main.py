@@ -6,7 +6,7 @@ import compiler
 from compiler_obj import CompilerArgs, CompilerErrorLevels
 
 
-def list_format(to_format: list, format_str: str):
+def list_format(to_format: list):
     return ', '.join(['%s'] * len(to_format)) % tuple(to_format)
 
 
@@ -51,8 +51,8 @@ CONTRIBUTORS_COMPILER = [
 
 print("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n")
 print(f"Compiler version: {COMPILER_VERSION}\n")
-print(f"Contributors CPU: {list_format(CONTRIBUTORS_CPU, '%')}")
-print(f"Contributors Compiler: {list_format(CONTRIBUTORS_COMPILER, '%')}")
+print(f"Contributors CPU: {list_format(CONTRIBUTORS_CPU)}")
+print(f"Contributors Compiler: {list_format(CONTRIBUTORS_COMPILER)}")
 print("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n")
 
 if len(sys.argv) <= 1:

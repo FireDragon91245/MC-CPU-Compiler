@@ -3,7 +3,7 @@ A Compiler for my CPU im building in Minecraft
 (And be ready for some terible python code LOL)
 
 # Current CPU Specs
-- 8 bit CPU (math, adress buss, ...)
+- 8-bit CPU (math, adress buss, ...)
 - 256 bytes RAM (8 32 byte segments)
 - 256 instructions ROM (each instruction is 3 bytes (operant, arg1, arg2) = 768 bytes ROM on 256 addresses)
 

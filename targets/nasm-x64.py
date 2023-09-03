@@ -1,27 +1,29 @@
-from compiler_obj import LanguageTarget, CompilerArgs
+from pathlib import Path
+
+from compiler_obj import LanguageTarget, CompilerArgs, CompilerResult
 
 
 class MCCPU(LanguageTarget):
 
     def transpile(self, compile_lines: list[str], compile_lines_with_labels_comments: list[str],
                   rom_instructions: list[(int, int, int)],
-                  rom_instructions_with_labels_comments: list[(int | str, int | None, int | None)], args: CompilerArgs):
-        with open("./nasm-x64.asm", "rt") as tmpl:
-            code = self.getCode(rom_instructions_with_labels_comments)
+                  rom_instructions_with_labels_comments: list[(int | str, int | None, int | None)], args: CompilerArgs,
+                  compiler_root_dir: Path) -> CompilerResult:
+        return CompilerResult.ok()
 
-    def getCode(self, rom_instructions_with_labels_comments) -> list[str]:
+    @staticmethod
+    def get_code(rom_instructions_with_labels_comments) -> list[str]:
         code: list[str] = []
         for inst in rom_instructions_with_labels_comments:
             inst, arg1, arg2 = inst
             match inst:
-                case 1:
-                    code.append(f"mov {self.translateRegister(arg1)}, {self.translateRegister(arg2)}")
-                case 2:
+                case _:
+                    print("Not Implemented")
+                # TODO: instruction translation
         return code
-                    
 
     @staticmethod
-    def translateRegister(register: int) -> str:
+    def translate_register(register: int) -> str:
         match register:
             case 0:
                 return "rax"

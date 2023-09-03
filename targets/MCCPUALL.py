@@ -3,7 +3,7 @@ from pathlib import Path
 from compiler_obj import LanguageTarget, CompilerArgs, CompilerResult
 
 
-class MCCPU_ALL(LanguageTarget):
+class MCCPUALL(LanguageTarget):
 
     def transpile(self, compile_lines: list[str], compile_lines_with_labels_comments: list[str],
                   rom_instructions: list[(int, int, int)],

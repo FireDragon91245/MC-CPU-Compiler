@@ -273,15 +273,15 @@ def get_var_memory_address(lines: list[str], variables: dict[str, int], args: Co
                     start_ln = line_no
                     if line.find("incremental") != -1:
                         return shrt_res.accumulate(
-                            find_var_static_all(line_enumerate, start_ln, variables, False, args))
+                            find_var_static_all(line_enumerate, variables, False, args))
                     elif line.find("balanced") != -1:
-                        return shrt_res.accumulate(find_var_static_all(line_enumerate, start_ln, variables, True, args))
+                        return shrt_res.accumulate(find_var_static_all(line_enumerate, variables, True, args))
                     else:
                         shrt_res.accumulate(CompilerResult.warn(f"[WARN] No memory balancing type found at "
                                                                 f"#memorylayout ln <{start_ln}> defaulting to ["
                                                                 f"Incremental]"))
                         return shrt_res.accumulate(
-                            find_var_static_all(line_enumerate, start_ln, variables, False, args))
+                            find_var_static_all(line_enumerate, variables, False, args))
                 else:
                     shrt_res.accumulate(CompilerResult.warn(
                         f"[WARN] #memorylayout at ln<{line_no}> does not contain a valid variable layout type token ["
@@ -292,7 +292,7 @@ def get_var_memory_address(lines: list[str], variables: dict[str, int], args: Co
         "explicit] + address balancing type [incremental / balanced] defaulting to [static auto incremental]"))
 
 
-def find_var_static_all(line_enumerate: enumerate[str], start_ln: int, variables: dict[str, int], balanced: bool,
+def find_var_static_all(line_enumerate: enumerate[str], variables: dict[str, int], balanced: bool,
                         args: CompilerArgs) -> CompilerResult:
     var_count = 0
     while True:
@@ -748,7 +748,7 @@ def handle_error(res: CompilerResult, args: CompilerArgs) -> CompilerResult | No
             print(f"{res.status} {res.message}")
         else:
             for msg in res.messages:
-                    print(f"{msg[0]} {msg[1]}")
+                print(f"{msg[0]} {msg[1]}")
     match res.status:
         case CompilerErrorLevels.ERROR:
             return None if args.exit_level == CompilerErrorLevels.NONE else res

@@ -1,6 +1,6 @@
 import os
 import pathlib
-import re
+import regex
 
 from compiler_obj import MacroTypes, Macro, CompilerArgs, CompilerResult, CompilerErrorLevels, LanguageTarget
 
@@ -227,11 +227,12 @@ NATIVE_INSTRUCTIONS: dict[str, int] = {
 }
 TYPE_REGEX_MATCH_REPLACERS = {
     "%registerpointer": r"(\[&r[0-9]{1,3}\])",
-    "%register": "(&r[0-9]{1,3})",
-    "%number": "(0x[0-9A-Fa-f]{1,2}|[0-9]{1,3})",
+    "%register": r"(&r[0-9]{1,3})",
+    "%number": r"(0x[0-9A-Fa-f]{1,2}|[0-9]{1,3})",
     "%address": r"(\*0x[0-9A-Fa-f]{1,2}|\*[0-9]{1,3})",
     "%variable": r"(\*[a-zA-Z][a-zA-Z0-9]*)",
-    "%label": "(~[a-zA-Z][a-zA-Z0-9_-]*)",
+    "%label": r"(~[a-zA-Z][a-zA-Z0-9_-]*)",
+    "%string": r"(\"((?>[^\"\"]+|(?1))*)\")"
 }
 
 
@@ -308,7 +309,7 @@ def find_var_static_all(line_enumerate: enumerate[str], variables: dict[str, int
 def find_var_static_auto_all(line_enumerate: enumerate[str], variables: dict[str, int], balanced: bool,
                              args: CompilerArgs) -> CompilerResult:
     re_var = r"\*([a-zA-Z][a-zA-Z0-9]*)"
-    re_var_comp = re.compile(re_var)
+    re_var_comp = regex.compile(re_var)
     var_count = 0
     while True:
         line_no, line = next(line_enumerate, (None, None))
@@ -326,7 +327,7 @@ def get_imported_files(imported_files, lines, file) -> CompilerResult:
     for line_no, line in enumerate(lines):
         if line.startswith('#'):
             if line.find("includemacrofile") != -1:
-                matches: list[str] = re.findall(include_match, line)
+                matches: list[str] = regex.findall(include_match, line)
                 for match in matches:
                     curr_dir = os.getcwd()
                     if os.path.isfile(curr_dir + "/macrodefs/" + match + ".mccpu"):
@@ -359,7 +360,7 @@ def get_imported_files(imported_files, lines, file) -> CompilerResult:
 
 def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes] | CompilerResult:
     type_reg = r"%[a-zA-Z]*"
-    matches: list[str] = re.findall(type_reg, macro_opener)
+    matches: list[str] = regex.findall(type_reg, macro_opener)
     macro_types: list[MacroTypes] = []
     for match in matches:
         if match == "%label":
@@ -384,8 +385,8 @@ def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes] | Compi
 def load_macros(macros: dict[int, Macro], file, lines: list[str]) -> CompilerResult:
     macro_reg = r"#\s*macro\s*(.+)"
     macro_end_reg = r"#\s*endmacro\s*(.+)?"
-    macro_reg_com = re.compile(macro_reg)
-    macro_end_reg_com = re.compile(macro_end_reg)
+    macro_reg_com = regex.compile(macro_reg)
+    macro_end_reg_com = regex.compile(macro_end_reg)
     lines_iter = enumerate(lines)
     for line_no, line in lines_iter:
         matches = macro_reg_com.match(line)
@@ -445,7 +446,7 @@ def match_instruction(inst: str, line: str) -> bool:
     for t, repl in TYPE_REGEX_MATCH_REPLACERS.items():
         inst = inst.replace(t, repl)
 
-    res = re.match(inst, line)
+    res = regex.match(inst, line)
     return bool(res)
 
 
@@ -457,7 +458,7 @@ def is_only_native_instructions(curr_compile_lines: list[str]):
             continue
         if line.startswith("//"):
             continue
-        if re.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", line) is not None:
+        if regex.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", line) is not None:
             continue
         found = False
         for inst in NATIVE_INSTRUCTIONS.keys():
@@ -485,7 +486,7 @@ def resolve_macro(curr_compile_lines: list[str], line_no: int, macro: Macro, mac
     macro_pattern = escape_instruction(macro.macro_opener)
     for t, repl in TYPE_REGEX_MATCH_REPLACERS.items():
         macro_pattern = macro_pattern.replace(t, repl)
-    args = re.match(macro_pattern, curr_compile_lines[line_no])
+    args = regex.match(macro_pattern, curr_compile_lines[line_no])
 
     if macro.complex_macro:
         level = 0
@@ -538,7 +539,7 @@ def resolve_macros(curr_compile_lines: list[str], macros: dict[int, Macro]) -> C
                 break
         if found:
             continue
-        if re.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", curr_compile_lines[line_no]) is not None:  # excluded label declarations
+        if regex.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", curr_compile_lines[line_no]) is not None:  # excluded label declarations
             continue
         if curr_compile_lines[line_no].startswith("//"):
             continue
@@ -584,7 +585,7 @@ def resolve_labels(curr_compile_lines: list[str]) -> bool:
     max_iter = 1000
     finished = False
     label_re = r"([a-zA-Z][a-zA-Z0-9_-]+):"
-    label_re_comp = re.compile(label_re)
+    label_re_comp = regex.compile(label_re)
 
     while curr < max_iter and not finished:
         curr = curr + 1
@@ -673,7 +674,7 @@ def instructions_to_rom_labels(curr_compile_lines_labels: list[str],
                                rom_instructions_labels: list[
                                    (int | str, int | None | str, int | None)]) -> CompilerResult:
     for line in curr_compile_lines_labels:
-        m = re.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", line)
+        m = regex.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", line)
         if line == '':
             continue
         if line.startswith('//'):
@@ -710,19 +711,19 @@ def num_to_int(param: str) -> int:
 
 
 def register_to_int(param: str) -> int:
-    return int(re.findall(r"&r([0-9]{1,3})|$", param)[0])
+    return int(regex.findall(r"&r([0-9]{1,3})|$", param)[0])
 
 
 def inst_arg_to_rom(param: str) -> int | str:
-    if (match := re.match(TYPE_REGEX_MATCH_REPLACERS["%number"], param)) is not None:
+    if (match := regex.match(TYPE_REGEX_MATCH_REPLACERS["%number"], param)) is not None:
         return num_to_int(match.group(1))
-    elif (match := re.match(TYPE_REGEX_MATCH_REPLACERS["%register"], param)) is not None:
+    elif (match := regex.match(TYPE_REGEX_MATCH_REPLACERS["%register"], param)) is not None:
         return register_to_int(match.group(1))
-    elif (match := re.match(TYPE_REGEX_MATCH_REPLACERS["%address"], param)) is not None:
+    elif (match := regex.match(TYPE_REGEX_MATCH_REPLACERS["%address"], param)) is not None:
         return num_to_int(match.group(1).replace("*", ""))
-    elif (match := re.match(TYPE_REGEX_MATCH_REPLACERS["%registerpointer"], param)) is not None:
+    elif (match := regex.match(TYPE_REGEX_MATCH_REPLACERS["%registerpointer"], param)) is not None:
         return register_to_int(match.group(1))
-    elif (match := re.match(TYPE_REGEX_MATCH_REPLACERS["%label"], param)) is not None:
+    elif (match := regex.match(TYPE_REGEX_MATCH_REPLACERS["%label"], param)) is not None:
         return match.group(1)
     else:
         return -1

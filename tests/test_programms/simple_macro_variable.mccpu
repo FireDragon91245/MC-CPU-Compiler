@@ -1,0 +1,9 @@
+#memorylayout static incremental
+    Number
+#endmemorylayout
+
+#macro one %variable
+    mov &r1, %1
+#endmacro
+
+one *Number

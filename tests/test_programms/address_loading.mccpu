@@ -1,0 +1,10 @@
+#memorylayout static incremental
+    Number
+#endmemorylayout
+
+mov &r1, [*Number]
+mov [&r1], 0
+
+//is equal to
+
+mov *Number, 0

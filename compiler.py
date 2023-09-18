@@ -375,6 +375,8 @@ def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes] | Compi
             macro_types.append(MacroTypes.REGISTER)
         elif match == "%registerpointer":
             macro_types.append(MacroTypes.REGISTER_POINTER)
+        elif match == "%string":
+            macro_types.append(MacroTypes.STRING)
         else:
             return CompilerResult.error(
                 f"[ERROR] macro \"{macro_opener}\" in file \"{file}\" at line <{line_no}> used not valid type "
@@ -470,10 +472,12 @@ def is_only_native_instructions(curr_compile_lines: list[str]):
     return True
 
 
-def resolve_args(macro_line, args, macro: Macro, macro_id: int):
+def resolve_args(macro_line, args, macro: Macro, macro_id: int, variable_memory_pos: dict[str, int]):
     for i in range(0, len(args.groups())):
         macro_line = macro_line.replace(f"%{i + 1}", args.group(i + 1)).replace("%__macro_id", str(macro_id)). \
             replace("%__macro_no", str(macro.macro_no)).replace("%__macro_head", macro.macro_opener)
+        for var_name, var_pos in variable_memory_pos.items():
+            macro_line = macro_line.replace(f"[*{var_name}]", str(var_pos))
     return macro_line
 
 
@@ -481,7 +485,8 @@ def escape_instruction(inst: str) -> str:
     return inst.replace("(", r"\(").replace("{", r"\{").replace(")", r"\)").replace("}", r"\}")
 
 
-def resolve_macro(curr_compile_lines: list[str], line_no: int, macro: Macro, macro_id: int, macros: list[Macro]) -> int:
+def resolve_macro(curr_compile_lines: list[str], line_no: int, macro: Macro, macro_id: int, macros: list[Macro],
+                  variable_memory_pos: dict[str, int]) -> int:
     macro.macro_no = macro.macro_no + 1
     macro_pattern = escape_instruction(macro.macro_opener)
     for t, repl in TYPE_REGEX_MATCH_REPLACERS.items():
@@ -506,29 +511,34 @@ def resolve_macro(curr_compile_lines: list[str], line_no: int, macro: Macro, mac
             body.append(curr_compile_lines[macro_line_no])
         del curr_compile_lines[line_no:macro_line_no + 1]
         for i in reversed(range(0, len(macro.macro_bottom))):
-            curr_compile_lines.insert(line_no, resolve_args(macro.macro_bottom[i], args, macro, macro_id))
+            curr_compile_lines.insert(line_no, resolve_args(macro.macro_bottom[i], args, macro, macro_id,
+                                                            variable_memory_pos))
         for i in reversed(range(0, len(body))):
-            curr_compile_lines.insert(line_no, resolve_args(body[i], args, macro, macro_id))
+            curr_compile_lines.insert(line_no, resolve_args(body[i], args, macro, macro_id, variable_memory_pos))
         for i in reversed(range(0, len(macro.macro_top))):
-            curr_compile_lines.insert(line_no, resolve_args(macro.macro_top[i], args, macro, macro_id))
+            curr_compile_lines.insert(line_no, resolve_args(macro.macro_top[i], args, macro, macro_id,
+                                                            variable_memory_pos))
         return line_no + len(macro.macro_top) + len(body) + len(macro.macro_bottom)
     else:
         del curr_compile_lines[line_no]
         for i in reversed(range(0, len(macro.macro_top))):
-            curr_compile_lines.insert(line_no, resolve_args(macro.macro_top[i], args, macro, macro_id))
+            curr_compile_lines.insert(line_no, resolve_args(macro.macro_top[i], args, macro, macro_id,
+                                                            variable_memory_pos))
         return line_no + len(macro.macro_top)
 
 
-def resolve_macros(curr_compile_lines: list[str], macros: dict[int, Macro]) -> CompilerResult:
+def resolve_macros(curr_compile_lines: list[str], macros: dict[int, Macro],
+                   variable_memory_pos: dict[str, int]) -> CompilerResult:
     for line_no in range(len(curr_compile_lines)):
         found = False
         if curr_compile_lines[line_no] == '':
             continue
         for macro_id, macro in macros.items():
             if match_instruction(macro.macro_opener, curr_compile_lines[line_no]):
-                line_no = resolve_macro(curr_compile_lines, line_no, macro, macro_id, list(macros.values()))
+                line_no = resolve_macro(curr_compile_lines, line_no, macro, macro_id, list(macros.values()),
+                                        variable_memory_pos)
                 if line_no == -1:
-                    assert False  # Unknwo error or cause for line_no investigate if trigered
+                    assert False  # Unknown error or cause for line_no investigate if triggered
                 found = True
                 break
         if found:
@@ -539,7 +549,8 @@ def resolve_macros(curr_compile_lines: list[str], macros: dict[int, Macro]) -> C
                 break
         if found:
             continue
-        if regex.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", curr_compile_lines[line_no]) is not None:  # excluded label declarations
+        if regex.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", curr_compile_lines[line_no]) is not None:
+            # excluded label declarations
             continue
         if curr_compile_lines[line_no].startswith("//"):
             continue
@@ -645,7 +656,7 @@ def call_language_handler(curr_compile_lines: list[str], curr_compile_lines_labe
                           args: CompilerArgs) -> CompilerResult:
     module = __import__(f"targets.{args.target_lang.upper()}")
     if module is None:
-        return CompilerResult.error(f"[ERROR] Canot find language modul for language \"{args.target_lang}\"")
+        return CompilerResult.error(f"[ERROR] Cannot find language modul for language \"{args.target_lang}\"")
     lang_module = getattr(module, args.target_lang.upper(), None)
     if lang_module is None:
         return CompilerResult.error(f"[ERROR] Language modul \"{args.target_lang}\" did not contain a handler class")
@@ -765,6 +776,12 @@ def handle_error(res: CompilerResult, args: CompilerArgs) -> CompilerResult | No
             return None
 
 
+def resolve_variable_address_lookup(curr_compile_lines: list[str], variable_memory_pos: dict[str, int]):
+    for line_no in range(len(curr_compile_lines)):
+        for var, address in variable_memory_pos.items():
+            curr_compile_lines[line_no] = curr_compile_lines[line_no].replace(f"[*{var}]", f"{address:.0f}")
+
+
 def compile_file(file_path: str, args: CompilerArgs) -> CompilerResult:
     result: CompilerResult = CompilerResult.empty()
 
@@ -808,15 +825,18 @@ def compile_file(file_path: str, args: CompilerArgs) -> CompilerResult:
                     args) is not None:
         return result
 
+    resolve_variable_address_lookup(curr_compile_lines, variable_memory_pos)
+
     depth_limit = 1_000
     curr_depth = 0
     while not is_only_native_instructions(curr_compile_lines):
         curr_depth = curr_depth + 1
-        if handle_error(result.accumulate(resolve_macros(curr_compile_lines, macros)), args) is not None:
+        if handle_error(result.accumulate(
+                resolve_macros(curr_compile_lines, macros, variable_memory_pos)), args) is not None:
             return result
         if curr_depth >= depth_limit:
             if handle_error(result.accumulate(CompilerResult.error(
-                    "[ERROR] recursive macro? encountered depth of {depth_limit} and still found unresolved macros.")),
+                    f"[ERROR] recursive macro? encountered depth of {depth_limit} and still found unresolved macros.")),
                     args) is None:
                 return result
 

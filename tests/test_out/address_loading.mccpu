@@ -1,0 +1,7 @@
+
+mov &r1, 0
+mov [&r1], 0
+
+//is equal to
+
+mov *0, 0

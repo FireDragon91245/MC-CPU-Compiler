@@ -19,8 +19,10 @@ class InstructionTest(unittest.TestCase):
         path = ".\\test_programms\\*"
         all_files = [f for f in glob.glob(path) if os.path.isfile(f)]
         for file in all_files:
-            args = CompilerArgs("mccpu", 256, 8, 64, 16, CompilerErrorLevels.WARNING,
-                                f"tests\\test_out\\{os.path.splitext(os.path.basename(file))[0]}")
+            if file.find("ignore") != -1:
+                continue
+            args = CompilerArgs("MCCPU", 256, 8, 64, 16, CompilerErrorLevels.WARNING,
+                                f"test_out\\{os.path.splitext(os.path.basename(file))[0]}")
             res = compile_file(file, args)
             self.assertTrue(res.status == CompilerErrorLevels.OK, str(res))
 

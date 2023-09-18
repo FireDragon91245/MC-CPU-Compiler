@@ -9,6 +9,7 @@ class MacroTypes(Enum):
     NUMBER = 4
     REGISTER = 5
     REGISTER_POINTER = 6
+    STRING = 7
 
 
 class CompilerErrorLevels(Enum):

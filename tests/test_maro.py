@@ -12,19 +12,27 @@ class MacroTests(unittest.TestCase):
                     False)
         res = resolve_args("mov %1, %2", re.match(
             f'test {TYPE_REGEX_MATCH_REPLACERS["%register"]}, {TYPE_REGEX_MATCH_REPLACERS["%register"]}',
-            "test &r1, &r2"), mac, 0)
+            "test &r1, &r2"), mac, 0, {})
         self.assertEqual(res, "mov &r1, &r2", "macro arg resolver contains errors")
 
     def test_macro_resolve(self):
         mac = Macro("zero %register", "", [MacroTypes.REGISTER], ["mov %1, 0x00"], [], False)
         lines = ["zero &r1"]
-        resolve_macro(lines, 0, mac, 0, [mac])
+        resolve_macro(lines, 0, mac, 0, [mac], {})
         self.assertEqual(lines, ["mov &r1, 0x00"])
+
+    def test_macro_resolve_memory_address_lookup(self):
+        mac = Macro("test %register, %register", "", [MacroTypes.REGISTER, MacroTypes.REGISTER], ["mov %1, %2"], [],
+                    False)
+        res = resolve_args("mov %1, [%2]", re.match(
+            f'test {TYPE_REGEX_MATCH_REPLACERS["%register"]}, {TYPE_REGEX_MATCH_REPLACERS["%variable"]}',
+            "test &r1, *myvar"), mac, 0, {"myvar": 20})
+        self.assertEqual(res, "mov &r1, 20", "macro arg resolver contains errors")
 
     def test_macros_resolve(self):
         mac = Macro("zero %register", "", [MacroTypes.REGISTER], ["mov %1, 0x00"], [], False)
         lines = ["zero &r1"]
-        res = resolve_macros(lines, {0: mac})
+        res = resolve_macros(lines, {0: mac}, {})
         self.assertEqual(res.status, CompilerErrorLevels.OK, str(res))
         self.assertEqual(lines, ["mov &r1, 0x00"])
 

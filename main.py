@@ -57,6 +57,8 @@ print(f"Contributors CPU: {list_format(CONTRIBUTORS_CPU)}")
 print(f"Contributors Compiler: {list_format(CONTRIBUTORS_COMPILER)}")
 print("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=\n")
 
+print(f"Working dir: {os.getcwd()}\n")
+
 if len(sys.argv) <= 1:
     print("No source file provided, exiting!")
     exit(0)

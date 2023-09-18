@@ -656,7 +656,7 @@ def call_language_handler(curr_compile_lines: list[str], curr_compile_lines_labe
         return CompilerResult.error(f"[ERROR] Language class \"{args.target_lang}\" did not contain a handler function")
     try:
         res = lang_func(lang_class, curr_compile_lines, curr_compile_lines_label, rom_instructions,
-                        rom_instructions_label, args, pathlib.Path(__file__).parent.resolve())
+                        rom_instructions_label, args, pathlib.Path(os.getcwd()))
         if not isinstance(res, CompilerResult):
             raise TypeError(
                 f"{args.target_lang.upper()}.{LanguageTarget.transpile.__name__}() return type expected "

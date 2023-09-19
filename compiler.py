@@ -1,8 +1,14 @@
+import glob
+import inspect
 import os
 import pathlib
+from types import ModuleType
+from typing import Type, Pattern, Match
+
 import regex
 
-from compiler_obj import MacroTypes, Macro, CompilerArgs, CompilerResult, CompilerErrorLevels, LanguageTarget
+from compiler_obj import MacroTypes, Macro, CompilerArgs, CompilerResult, CompilerErrorLevels, LanguageTarget, \
+    MacroGenerator, MacroLoadingState, RegexCache
 
 # %number can be equal to %label, only the compiler deals with %label & %variable and is resolved to %number at
 # compile time
@@ -235,6 +241,8 @@ TYPE_REGEX_MATCH_REPLACERS = {
     "%string": r"(\"((?>[^\"\"]+|(?1))*)\")"
 }
 
+REGEX_CACHE: RegexCache = RegexCache()
+
 
 def read_lines(file):
     return file.read().splitlines()
@@ -250,6 +258,43 @@ def next_memory_address(var_count: int, blocks: int, balance: bool, mem_size: in
         return int(address)
 
 
+def get_var_memory_address_auto(line: str, variables: dict[str, int], args: CompilerArgs,
+                                line_enumerate: enumerate[str], shrt_res: CompilerResult) -> CompilerResult | None:
+    if line.find("auto") != -1 and line.find("static") != -1:
+        if line.find("incremental") != -1:
+            shrt_res.accumulate(find_var_static_auto_all(line_enumerate, variables, False, args))
+            return shrt_res.not_empty_or_ok()
+        elif line.find("balanced") != -1:
+            shrt_res.accumulate(find_var_static_auto_all(line_enumerate, variables, True, args))
+            return shrt_res.not_empty_or_ok()
+        else:
+            find_var_static_auto_all(line_enumerate, variables, False, args)
+            return shrt_res.accumulate(
+                CompilerResult.warn(f"[WARN] No memory balancing type found at #memorylayout ln <{line}>"
+                                    f" defaulting to [Incremental]"))
+    else:
+        return None
+
+
+def get_var_memory_address_static(line: str, variables: dict[str, int], args: CompilerArgs, line_no: int,
+                                  shrt_res: CompilerResult, line_enumerate: enumerate[str]) -> CompilerResult | None:
+    if line.find("static") != -1:
+        start_ln = line_no
+        if line.find("incremental") != -1:
+            return shrt_res.accumulate(
+                find_var_static_all(line_enumerate, variables, False, args))
+        elif line.find("balanced") != -1:
+            return shrt_res.accumulate(find_var_static_all(line_enumerate, variables, True, args))
+        else:
+            shrt_res.accumulate(CompilerResult.warn(f"[WARN] No memory balancing type found at "
+                                                    f"#memorylayout ln <{start_ln}> defaulting to ["
+                                                    f"Incremental]"))
+            return shrt_res.accumulate(
+                find_var_static_all(line_enumerate, variables, False, args))
+    else:
+        return None
+
+
 def get_var_memory_address(lines: list[str], variables: dict[str, int], args: CompilerArgs) -> CompilerResult:
     shrt_res: CompilerResult = CompilerResult.empty()
     line_enumerate = enumerate(lines)
@@ -258,31 +303,12 @@ def get_var_memory_address(lines: list[str], variables: dict[str, int], args: Co
             if line.find("memorylayout") != -1:
                 if line.find("explicit") != -1:
                     return shrt_res.not_empty_or_ok()
-                elif line.find("auto") != -1 and line.find("static") != -1:
-                    if line.find("incremental") != -1:
-                        shrt_res.accumulate(find_var_static_auto_all(line_enumerate, variables, False, args))
-                        return shrt_res.not_empty_or_ok()
-                    elif line.find("balanced") != -1:
-                        shrt_res.accumulate(find_var_static_auto_all(line_enumerate, variables, True, args))
-                        return shrt_res.not_empty_or_ok()
-                    else:
-                        find_var_static_auto_all(line_enumerate, variables, False, args)
-                        return shrt_res.accumulate(
-                            CompilerResult.warn(f"[WARN] No memory balancing type found at #memorylayout ln <{line}>"
-                                                f" defaulting to [Incremental]"))
-                elif line.find("static") != -1:
-                    start_ln = line_no
-                    if line.find("incremental") != -1:
-                        return shrt_res.accumulate(
-                            find_var_static_all(line_enumerate, variables, False, args))
-                    elif line.find("balanced") != -1:
-                        return shrt_res.accumulate(find_var_static_all(line_enumerate, variables, True, args))
-                    else:
-                        shrt_res.accumulate(CompilerResult.warn(f"[WARN] No memory balancing type found at "
-                                                                f"#memorylayout ln <{start_ln}> defaulting to ["
-                                                                f"Incremental]"))
-                        return shrt_res.accumulate(
-                            find_var_static_all(line_enumerate, variables, False, args))
+                elif (res := get_var_memory_address_auto(line, variables, args, line_enumerate, shrt_res)) \
+                        is not None:
+                    return res
+                elif (res := get_var_memory_address_static(line, variables, args, line_no, shrt_res,
+                                                           line_enumerate)) is not None:
+                    return res
                 else:
                     shrt_res.accumulate(CompilerResult.warn(
                         f"[WARN] #memorylayout at ln<{line_no}> does not contain a valid variable layout type token ["
@@ -384,62 +410,91 @@ def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes] | Compi
     return macro_types
 
 
-def load_macros(macros: dict[int, Macro], file, lines: list[str]) -> CompilerResult:
-    macro_reg = r"#\s*macro\s*(.+)"
-    macro_end_reg = r"#\s*endmacro\s*(.+)?"
+def create_macro_instance(state: MacroLoadingState, macros: dict[int, Macro], file: str,
+                          line_no: int) -> CompilerResult | None:
+    if state.complex_macro:
+        if state.macro_end is None:
+            return CompilerResult.error(f"[ERROR] Complex macros (macros using \"...\") need to have "
+                                        f"a closing expression error at #endmacro in file \"{file}\" "
+                                        f"at line <{line_no}>")
+        macros[abs(hash(state.macro_opener))] = Macro(state.macro_opener, state.macro_end, state.macro_args,
+                                                      state.macro_top, state.macro_bottom, state.complex_macro,
+                                                      state.generated_macro, state.macro_generator)
+    else:
+        if state.macro_end is None:
+            macros[abs(hash(state.macro_opener))] = Macro(state.macro_opener, "", state.macro_args, state.macro_top,
+                                                          state.macro_bottom, state.complex_macro,
+                                                          state.generated_macro,
+                                                          state.macro_generator)
+        else:
+            macros[abs(hash(state.macro_opener))] = Macro(state.macro_opener, state.macro_end, state.macro_args,
+                                                          state.macro_top, state.macro_bottom, state.complex_macro,
+                                                          state.generated_macro, state.macro_generator)
+
+
+def load_macro_body(lines_iter: enumerate[str], line_no: int, file: str,
+                    macro_generator_reg_com: Pattern[str], macro_generators: dict[str, Type[MacroGenerator]],
+                    macro_end_reg_com: Pattern[str], macros: dict[int, Macro],
+                    macro_state: MacroLoadingState) -> CompilerResult | None:
+    macro_args = get_macro_arg_types(macro_state.macro_opener, file, line_no)
+    if isinstance(macro_args, CompilerResult):
+        return macro_args
+    macro_state.macro_start_line_no = line_no
+    while True:
+        line_no, line = next(lines_iter, (None, None))
+        if line is None:
+            return CompilerResult.error(
+                f"[ERROR] Expected #endmacro after #macro in file \"{file}\" at line <{macro_state.macro_start_line_no}>")
+        if line.startswith("//"):
+            continue
+        macro_generator_matches = macro_generator_reg_com.match(line)
+        if macro_generator_matches is not None:
+            macro_generator_lines = []
+            while True:
+                line_no, line = next(lines_iter, (None, None))
+                if line is None:
+                    return CompilerResult.error(f"[ERROR] Expected #endmacrogenerator after #macrogenerator "
+                                                f"at line <{line_no}> in file \"{file}\"")
+                if line.startswith("#endmacrogenerator"):
+                    break
+                macro_generator_lines.append(line)
+            macro_state.generated_macro = True
+            macro_state.macro_generator = macro_generators[macro_generator_matches.group(1)](macro_generator_lines)
+        macro_end_matches = macro_end_reg_com.match(line)
+        if line == "...":
+            macro_state.complex_macro = True
+            macro_state.currently_macro_top = False
+        elif macro_end_matches is not None:
+            if (res := create_macro_instance(macro_state, macros, file, line_no)) is not None:
+                return res
+            break
+        else:
+            if line.startswith("#comment"):
+                line = line.replace("#comment", "//")
+            if macro_state.currently_macro_top:
+                macro_state.macro_top.append(line)
+            else:
+                macro_state.macro_bottom.append(line)
+
+
+def load_macros(macros: dict[int, Macro], file, lines: list[str],
+                macro_generators: dict[str, Type[MacroGenerator]]) -> CompilerResult:
+    REGEX_CACHE.add_pattern_if_not_added(macro_reg=r"#\s*macro\s*(.+)")
+    REGEX_CACHE.add_pattern_if_not_added(macro_end_reg = r"#\s*endmacro\s*(.+)?")
+    REGEX_CACHE.add_pattern_if_not_added(macro_generator_reg = r"#\s*macrogenerator\s*(.+)")
     macro_reg_com = regex.compile(macro_reg)
     macro_end_reg_com = regex.compile(macro_end_reg)
+    macro_generator_reg_com = regex.compile(macro_generator_reg)
     lines_iter = enumerate(lines)
     for line_no, line in lines_iter:
         matches = macro_reg_com.match(line)
         if matches is None:
             continue
         if len(matches.groups()) >= 1:
-            macro_opener = matches.group(1)
-            macro_args = get_macro_arg_types(macro_opener, file, line_no)
-            if isinstance(macro_args, CompilerResult):
-                return macro_args
-            macro_top: list[str] = []
-            macro_bottom: list[str] = []
-            complex_macro = False
-            currently_macro_top = True
-            macro_start_line_no = line_no
-            while True:
-                line_no, line = next(lines_iter, (None, None))
-                if line is None:
-                    return CompilerResult.error(
-                        f"[ERROR] Expected #endmacro after #macro in file \"{file}\" at line <{macro_start_line_no}>")
-                if line.startswith("//"):
-                    continue
-                macro_end_matches = macro_end_reg_com.match(line)
-                if line == "...":
-                    complex_macro = True
-                    currently_macro_top = False
-                elif macro_end_matches is not None:
-                    if complex_macro:
-                        if not (len(macro_end_matches.groups()) >= 1):
-                            return CompilerResult.error(f"[ERROR] Complex macros (macros using \"...\") need to have "
-                                                        f"a closing expression error at #endmacro in file \"{file}\" "
-                                                        f"at line <{line_no}>")
-                        macros[abs(hash(macro_opener))] = Macro(macro_opener, macro_end_matches.group(1), macro_args,
-                                                                macro_top,
-                                                                macro_bottom, complex_macro)
-                    else:
-                        if len(macro_end_matches.groups()) == 1:
-                            macros[abs(hash(macro_opener))] = Macro(macro_opener, "", macro_args, macro_top,
-                                                                    macro_bottom, complex_macro)
-                        else:
-                            macros[abs(hash(macro_opener))] = Macro(macro_opener, macro_end_matches.group(1),
-                                                                    macro_args, macro_top,
-                                                                    macro_bottom, complex_macro)
-                    break
-                else:
-                    if line.startswith("#comment"):
-                        line = line.replace("#comment", "//")
-                    if currently_macro_top:
-                        macro_top.append(line)
-                    else:
-                        macro_bottom.append(line)
+            macro_state = MacroLoadingState(matches.group(1))
+            if (res := load_macro_body(lines_iter, line_no, file, macro_generator_reg_com, macro_generators,
+                                       macro_end_reg_com, macros, macro_state)) is not None:
+                return res
     return CompilerResult.ok()
 
 
@@ -654,7 +709,7 @@ def call_language_handler(curr_compile_lines: list[str], curr_compile_lines_labe
                           rom_instructions: list[(int, int, int)],
                           rom_instructions_label: list[(int | str, int | None, int | None)],
                           args: CompilerArgs) -> CompilerResult:
-    module = __import__(f"targets.{args.target_lang.upper()}")
+    module = __import__(f"out_targets.{args.target_lang.upper()}")
     if module is None:
         return CompilerResult.error(f"[ERROR] Cannot find language modul for language \"{args.target_lang}\"")
     lang_module = getattr(module, args.target_lang.upper(), None)
@@ -782,6 +837,33 @@ def resolve_variable_address_lookup(curr_compile_lines: list[str], variable_memo
             curr_compile_lines[line_no] = curr_compile_lines[line_no].replace(f"[*{var}]", f"{address:.0f}")
 
 
+def load_all_modules_in_directory(path: pathlib.Path) -> list[ModuleType] | CompilerResult:
+    files = [pathlib.Path(file) for file in glob.glob(path.joinpath("*.py").name)]
+    modules = []
+    for f in files:
+        if not f.is_file():
+            continue
+        if not f.suffix == ".py":
+            continue
+        try:
+            modules.append(__import__(f.name[:-3], locals(), globals()))
+        except ImportError as e:
+            return CompilerResult.error(f"Failed to import module \"{f.name[:-3]}\" with error \"{e}\"")
+    return modules
+
+
+def load_macro_generators(macro_generators: dict[str, Type[MacroGenerator]]) -> CompilerResult:
+    modules = load_all_modules_in_directory(pathlib.Path(__file__).parent.joinpath("\\macro_generators"))
+    if isinstance(modules, CompilerResult):
+        return modules
+    for module in modules:
+        for name, obj in inspect.getmembers(module):
+            if inspect.isclass(obj):
+                if issubclass(obj, MacroGenerator):
+                    macro_generators[obj.get_target_language().lower()] = obj
+    return CompilerResult.ok()
+
+
 def compile_file(file_path: str, args: CompilerArgs) -> CompilerResult:
     result: CompilerResult = CompilerResult.empty()
 
@@ -807,12 +889,18 @@ def compile_file(file_path: str, args: CompilerArgs) -> CompilerResult:
         for file_line_no in range(len(file_lines)):
             file_lines[file_line_no] = file_lines[file_line_no].lower().strip()
 
+    macro_generators: dict[str, Type[MacroGenerator]] = {}
+
+    if handle_error(result.accumulate(load_macro_generators(macro_generators)), args) is not None:
+        return result
+
     macros: dict[int, Macro] = {}
     for file, included_lines in imported_files.items():
-        if handle_error(result.accumulate(load_macros(macros, file, included_lines)), args) is not None:
+        if handle_error(result.accumulate(load_macros(macros, file, included_lines, macro_generators)), args) \
+                is not None:
             return result
 
-    if handle_error(result.accumulate(load_macros(macros, file_path, lines)), args) is not None:
+    if handle_error(result.accumulate(load_macros(macros, file_path, lines, macro_generators)), args) is not None:
         return result
 
     variable_memory_pos: dict[str, int] = {}

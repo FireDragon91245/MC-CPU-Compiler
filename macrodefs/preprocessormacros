@@ -1,0 +1,23 @@
+#macro repeat %string, %number
+    #macrogenerator lua
+        local repeat = {}
+
+        function repeat:onAfterMacroLoad(compiler, macro)
+        end
+
+        function repeat:onMacroUsage(compiler, macro, macro_instance)
+            macro_instance:clear_body()
+            args = macro_instance:get_arguments()
+            code = args.get(1)
+            repeat_count = args.get(2)
+            macro_instance:add_body("#comment repeat '" .. code .. "' * " .. repeat_count)
+            for i = 1, repeat_count do
+                macro_instance:add_body(code)
+            end
+        end
+
+        return repeat
+    #endmacrogenerator
+#endmacro
+
+#

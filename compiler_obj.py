@@ -1,5 +1,9 @@
+from abc import abstractmethod
 from enum import Enum
 from pathlib import Path
+from typing import Type
+
+import regex
 
 
 class MacroTypes(Enum):
@@ -26,7 +30,9 @@ class CompilerErrorLevels(Enum):
 class Macro:
 
     def __init__(self, macro_opener: str, macro_closer: str, macro_args: list[MacroTypes], macro_top: list[str],
-                 macro_bottom: list[str], complex_macro: bool) -> None:
+                 macro_bottom: list[str], complex_macro: bool, generated_macro: bool, macro_generator) -> None:
+        self.macro_generator = macro_generator
+        self.generated_macro = generated_macro
         self.complex_macro = complex_macro
         self.macro_bottom = macro_bottom
         self.macro_top = macro_top
@@ -130,10 +136,61 @@ class CompilerResult:
         return self if self.status is not None else self.ok()
 
 
-class LanguageTarget:
+class MacroGenerator:
+    @staticmethod
+    @abstractmethod
+    def get_target_language() -> str:
+        pass
 
+    @abstractmethod
+    def __init__(self, generator_lines: list[str]) -> None:
+        pass
+
+    @abstractmethod
+    def load_generator(self, args: CompilerArgs, macro: Macro) -> CompilerResult:
+        pass
+
+    @abstractmethod
+    def use_generator(self, args: CompilerArgs, macro: Macro, macro_args: list[str]) -> CompilerResult:
+        pass
+
+
+class LanguageTarget:
+    @abstractmethod
     def transpile(self, compile_lines: list[str], compile_lines_with_labels_comments: list[str],
                   rom_instructions: list[(int, int, int)],
                   rom_instructions_with_labels_comments: list[(int | str, int | None, int | None)],
                   args: CompilerArgs, compiler_working_dir: Path) -> CompilerResult:
         pass
+
+
+class MacroLoadingState():
+    def __init__(self, macro_opener: str):
+        self.macro_generator: Type[MacroGenerator] | None = None
+        self.generated_macro: bool = False
+        self.macro_bottom: list[str] = []
+        self.macro_top: list[str] = []
+        self.macro_args: list[MacroTypes] = []
+        self.macro_end: str | None = None
+        self.macro_opener: str = macro_opener
+        self.complex_macro: bool = False
+
+
+class RegexCache:
+
+    def __init__(self, **key_patern):
+        self.key_pattern = key_patern
+        self.cache = {}
+
+    def get_by_name(self, name):
+        if name not in self.cache:
+            self.cache[name] = regex.compile(self.key_pattern[name])
+        return self.cache[name]
+
+    def add_pater_name(self, name, pater):
+        self.key_pattern[name] = pater
+
+    def add_pattern_if_not_added(self, **args):
+        for name, pattern in args.items():
+            if name not in self.key_pattern:
+                self.key_pattern[name] = pattern

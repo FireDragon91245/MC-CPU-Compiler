@@ -1,0 +1,16 @@
+#memorylayout static auto incremental
+#endmemorylayout
+
+#macro repeat %number %string
+    #macrogenerator lua
+        local gen = {}
+
+        function gen:onAfterMacroLoad(macro)
+        end
+
+        function gen:onMacroUsage(macro)
+        end
+
+        return gen
+    #endmacrogenerator
+#endmacro

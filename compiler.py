@@ -2,8 +2,9 @@ import glob
 import inspect
 import os
 import pathlib
+
 from types import ModuleType
-from typing import Type, Pattern, Match
+from typing import Type
 
 import regex
 
@@ -242,6 +243,8 @@ TYPE_REGEX_MATCH_REPLACERS = {
 }
 
 REGEX_CACHE: RegexCache = RegexCache()
+WORKING_DIR = pathlib.Path(os.getcwd())
+COMPILER_FOLDER = pathlib.Path(__file__).parent
 
 
 def read_lines(file):
@@ -348,35 +351,47 @@ def find_var_static_auto_all(line_enumerate: enumerate[str], variables: dict[str
                 var_count = var_count + 1
 
 
+def handle_std_macro_files(match: str, line_no: int, line: str,
+                           imported_files: dict[str, list[str]]) -> CompilerResult | None:
+    if COMPILER_FOLDER.joinpath(f"/macrodefs/{match}.mccpu").is_file():
+        file = open(COMPILER_FOLDER.joinpath(f"/macrodefs/{match}.mccpu"), "rt")
+        if not file.readable():
+            return CompilerResult.error(
+                f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value "
+                f"\"{line}\" was not found, exiting!")
+        if imported_files.get(match) is not None:
+            return None
+        imported_files[match] = read_lines(file)
+        return get_imported_files(imported_files, imported_files.get(match),
+                                  COMPILER_FOLDER.joinpath(f"/macrodefs/{match}.mccpu").name)
+    return None
+
+
+def handle_custom_macro_files(match: str, line_no: int, line: str, imported_files: dict[str, list[str]]):
+    if WORKING_DIR.joinpath(f"/{match}").is_file():
+        file = open(WORKING_DIR.joinpath(f"/{match}").name, "rt")
+        if not file.readable():
+            return CompilerResult.error(
+                f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value "
+                f"\"{line}\" was not found exiting!")
+        if imported_files.get(match) is not None:
+            return None
+        imported_files[match] = read_lines(file)
+        return get_imported_files(imported_files, imported_files.get(match), WORKING_DIR.joinpath(f"/{match}").name)
+    return None
+
+
 def get_imported_files(imported_files, lines, file) -> CompilerResult:
-    include_match = r"<([a-z|0-9|A-Z|.|_|-]+)>"
+    REGEX_CACHE.add_pattern_if_not_added(include_match=r"<([a-z|0-9|A-Z|.|_|-]+)>")
     for line_no, line in enumerate(lines):
         if line.startswith('#'):
             if line.find("includemacrofile") != -1:
-                matches: list[str] = regex.findall(include_match, line)
+                matches: list[str] = regex.findall(REGEX_CACHE.get_by_name("include_match").include_match, line)
                 for match in matches:
-                    curr_dir = os.getcwd()
-                    if os.path.isfile(curr_dir + "/macrodefs/" + match + ".mccpu"):
-                        file = open(curr_dir + "/macrodefs/" + match + ".mccpu", "rt")
-                        if not file.readable():
-                            return CompilerResult.error(
-                                f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value "
-                                f"\"{line}\" was not found, exiting!")
-                        if imported_files.get(match) is not None:
-                            continue
-                        imported_files[match] = read_lines(file)
-                        get_imported_files(imported_files, imported_files.get(match),
-                                           curr_dir + "/macrodefs/" + match + ".mccpu")
-                    elif os.path.isfile(curr_dir + "/" + match):
-                        file = open(curr_dir + "/" + match, "rt")
-                        if not file.readable():
-                            return CompilerResult.error(
-                                f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value "
-                                f"\"{line}\" was not found exiting!")
-                        if imported_files.get(match) is not None:
-                            continue
-                        imported_files[match] = read_lines(file)
-                        get_imported_files(imported_files, imported_files.get(match), curr_dir + match)
+                    if (res := handle_std_macro_files(match, line_no, line, imported_files)) is not None:
+                        return res
+                    elif (res := handle_custom_macro_files(match, line_no, line, imported_files)) is not None:
+                        return res
                     else:
                         return CompilerResult.error(
                             f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value "
@@ -384,9 +399,9 @@ def get_imported_files(imported_files, lines, file) -> CompilerResult:
     return CompilerResult.ok()
 
 
-def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes] | CompilerResult:
+def get_macro_arg_types(macro_state: MacroLoadingState) -> list[MacroTypes] | CompilerResult:
     type_reg = r"%[a-zA-Z]*"
-    matches: list[str] = regex.findall(type_reg, macro_opener)
+    matches: list[str] = regex.findall(type_reg, macro_state.macro_opener)
     macro_types: list[MacroTypes] = []
     for match in matches:
         if match == "%label":
@@ -405,17 +420,18 @@ def get_macro_arg_types(macro_opener, file, line_no) -> list[MacroTypes] | Compi
             macro_types.append(MacroTypes.STRING)
         else:
             return CompilerResult.error(
-                f"[ERROR] macro \"{macro_opener}\" in file \"{file}\" at line <{line_no}> used not valid type "
+                f"[ERROR] macro \"{macro_state.macro_opener}\" in file \"{macro_state.file}\" at line "
+                f"<{macro_state.macro_start_line_no}> used not valid type "
                 f"\"{match}\" valid are [%label, %variable, %address, %number, %register, %registerpointer]")
     return macro_types
 
 
-def create_macro_instance(state: MacroLoadingState, macros: dict[int, Macro], file: str,
+def create_macro_instance(state: MacroLoadingState, macros: dict[int, Macro],
                           line_no: int) -> CompilerResult | None:
     if state.complex_macro:
         if state.macro_end is None:
             return CompilerResult.error(f"[ERROR] Complex macros (macros using \"...\") need to have "
-                                        f"a closing expression error at #endmacro in file \"{file}\" "
+                                        f"a closing expression error at #endmacro in file \"{state.file}\" "
                                         f"at line <{line_no}>")
         macros[abs(hash(state.macro_opener))] = Macro(state.macro_opener, state.macro_end, state.macro_args,
                                                       state.macro_top, state.macro_bottom, state.complex_macro,
@@ -432,68 +448,106 @@ def create_macro_instance(state: MacroLoadingState, macros: dict[int, Macro], fi
                                                           state.generated_macro, state.macro_generator)
 
 
-def load_macro_body(lines_iter: enumerate[str], line_no: int, file: str,
-                    macro_generator_reg_com: Pattern[str], macro_generators: dict[str, Type[MacroGenerator]],
-                    macro_end_reg_com: Pattern[str], macros: dict[int, Macro],
-                    macro_state: MacroLoadingState) -> CompilerResult | None:
-    macro_args = get_macro_arg_types(macro_state.macro_opener, file, line_no)
+def load_macro_generator(macro_state: MacroLoadingState, lines_iter: enumerate[str],
+                         macro_generators: dict[str, Type[MacroGenerator]]) -> CompilerResult | None:
+    macro_generator_lines = []
+    while True:
+        line_no, line = next(lines_iter, (None, None))
+        if line is None:
+            return CompilerResult.error(f"[ERROR] Expected #endmacrogenerator after #macrogenerator "
+                                        f"at line <{line_no}> in file \"{macro_state.file}\"")
+        if line.startswith("#endmacrogenerator"):
+            break
+        macro_generator_lines.append(line)
+    macro_state.generated_macro = True
+    try:
+        macro_state.macro_generator = macro_generators[macro_state.macro_generator_lang](macro_generator_lines)
+    except KeyError:
+        return CompilerResult.error(f"[ERROR] Macro generator for language "
+                                    f"\"{macro_state.macro_generator_lang}\" not found, used at line"
+                                    f" <{macro_state.macro_generator_start}> in file \"{macro_state.file}\""
+                                    f" in macro \"{macro_state.macro_opener}\""
+                                    f" beginning at line <{macro_state.macro_start_line_no}>")
+    return None
+
+
+def handle_macro_generator(line: str, line_no: int, macro_state: MacroLoadingState, lines_iter,
+                           macro_generators: dict[str, Type[MacroGenerator]]) -> CompilerResult | None:
+    macro_generator_matches = REGEX_CACHE.get_by_name("macro_generator_reg").match(line)
+    if macro_generator_matches is not None:
+        macro_state.macro_generator_start = line_no
+        macro_state.macro_generator_lang = macro_generator_matches.group(1)
+        if (res := load_macro_generator(macro_state, lines_iter, macro_generators)) is not None:
+            return res
+        else:
+            return CompilerResult.ok()
+    return None
+
+
+def handle_macro_end(line: str, macro_state: MacroLoadingState, macros: dict[int, Macro],
+                     line_no: int) -> CompilerResult | None:
+    macro_end_matches = REGEX_CACHE.get_by_name("macro_end_reg").match(line)
+    if macro_end_matches is not None:
+        macro_state.macro_end = macro_end_matches.group(1)
+        if (res := create_macro_instance(macro_state, macros, line_no)) is not None:
+            return res
+        else:
+            return CompilerResult.ok()
+
+
+def load_macro_body(lines_iter: enumerate[str],
+                    macro_generators: dict[str, Type[MacroGenerator]],
+                    macros: dict[int, Macro], macro_state: MacroLoadingState) -> CompilerResult | None:
+    macro_args = get_macro_arg_types(macro_state)
     if isinstance(macro_args, CompilerResult):
         return macro_args
-    macro_state.macro_start_line_no = line_no
+    macro_state.macro_args = macro_args
     while True:
         line_no, line = next(lines_iter, (None, None))
         if line is None:
             return CompilerResult.error(
-                f"[ERROR] Expected #endmacro after #macro in file \"{file}\" at line <{macro_state.macro_start_line_no}>")
-        if line.startswith("//"):
+                f"[ERROR] Expected #endmacro after #macro in file \"{macro_state.file}\" at line"
+                f" <{macro_state.macro_start_line_no}>")
+        elif line.startswith("//"):
             continue
-        macro_generator_matches = macro_generator_reg_com.match(line)
-        if macro_generator_matches is not None:
-            macro_generator_lines = []
-            while True:
-                line_no, line = next(lines_iter, (None, None))
-                if line is None:
-                    return CompilerResult.error(f"[ERROR] Expected #endmacrogenerator after #macrogenerator "
-                                                f"at line <{line_no}> in file \"{file}\"")
-                if line.startswith("#endmacrogenerator"):
-                    break
-                macro_generator_lines.append(line)
-            macro_state.generated_macro = True
-            macro_state.macro_generator = macro_generators[macro_generator_matches.group(1)](macro_generator_lines)
-        macro_end_matches = macro_end_reg_com.match(line)
-        if line == "...":
+        elif (res := handle_macro_generator(line, line_no, macro_state, lines_iter, macro_generators)) is not None:
+            if res.status != CompilerErrorLevels.OK:
+                return res
+            continue
+        elif line == "...":
             macro_state.complex_macro = True
             macro_state.currently_macro_top = False
-        elif macro_end_matches is not None:
-            if (res := create_macro_instance(macro_state, macros, file, line_no)) is not None:
+        elif (res := handle_macro_end(line, macro_state, macros, line_no)) is not None:
+            if res.status != CompilerErrorLevels.OK:
                 return res
             break
         else:
-            if line.startswith("#comment"):
-                line = line.replace("#comment", "//")
-            if macro_state.currently_macro_top:
-                macro_state.macro_top.append(line)
-            else:
-                macro_state.macro_bottom.append(line)
+            macro_append_line(line, macro_state)
+
+
+def macro_append_line(line: str, macro_state: MacroLoadingState):
+    if line.startswith("#comment"):
+        line = line.replace("#comment", "//")
+    if macro_state.currently_macro_top:
+        macro_state.macro_top.append(line)
+    else:
+        macro_state.macro_bottom.append(line)
 
 
 def load_macros(macros: dict[int, Macro], file, lines: list[str],
                 macro_generators: dict[str, Type[MacroGenerator]]) -> CompilerResult:
     REGEX_CACHE.add_pattern_if_not_added(macro_reg=r"#\s*macro\s*(.+)")
-    REGEX_CACHE.add_pattern_if_not_added(macro_end_reg = r"#\s*endmacro\s*(.+)?")
-    REGEX_CACHE.add_pattern_if_not_added(macro_generator_reg = r"#\s*macrogenerator\s*(.+)")
-    macro_reg_com = regex.compile(macro_reg)
-    macro_end_reg_com = regex.compile(macro_end_reg)
-    macro_generator_reg_com = regex.compile(macro_generator_reg)
+    REGEX_CACHE.add_pattern_if_not_added(macro_end_reg=r"#\s*endmacro\s*(.+)?")
+    REGEX_CACHE.add_pattern_if_not_added(macro_generator_reg=r"#\s*macrogenerator\s*(.+)")
     lines_iter = enumerate(lines)
     for line_no, line in lines_iter:
-        matches = macro_reg_com.match(line)
+        matches = REGEX_CACHE.get_by_name("macro_reg").match(line)
         if matches is None:
             continue
         if len(matches.groups()) >= 1:
-            macro_state = MacroLoadingState(matches.group(1))
-            if (res := load_macro_body(lines_iter, line_no, file, macro_generator_reg_com, macro_generators,
-                                       macro_end_reg_com, macros, macro_state)) is not None:
+            macro_state = MacroLoadingState(matches.group(1), file, line_no)
+            if (res := load_macro_body(lines_iter, macro_generators,
+                                       macros, macro_state)) is not None:
                 return res
     return CompilerResult.ok()
 
@@ -723,7 +777,7 @@ def call_language_handler(curr_compile_lines: list[str], curr_compile_lines_labe
         return CompilerResult.error(f"[ERROR] Language class \"{args.target_lang}\" did not contain a handler function")
     try:
         res = lang_func(lang_class, curr_compile_lines, curr_compile_lines_label, rom_instructions,
-                        rom_instructions_label, args, pathlib.Path(os.getcwd()))
+                        rom_instructions_label, args, WORKING_DIR)
         if not isinstance(res, CompilerResult):
             raise TypeError(
                 f"{args.target_lang.upper()}.{LanguageTarget.transpile.__name__}() return type expected "

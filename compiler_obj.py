@@ -44,7 +44,8 @@ class Macro:
     def __cmp__(self, other):
         return self.complex_macro == other.complex_macro and self.macro_bottom == other.macro_bottom and\
             self.macro_top == other.macro_top and self.macro_args == other.macro_args and\
-            self.macro_closer == other.macro_closer and self.macro_opener == other.macro_opener
+            self.macro_closer == other.macro_closer and self.macro_opener == other.macro_opener and\
+            self.macro_generator == other.macro_generator and self.generated_macro == other.generated_macro
 
 
 class CompilerArgs:
@@ -165,7 +166,7 @@ class LanguageTarget:
 
 
 class MacroLoadingState():
-    def __init__(self, macro_opener: str):
+    def __init__(self, macro_opener: str, file: str, macro_start_line_no: int):
         self.macro_generator: Type[MacroGenerator] | None = None
         self.generated_macro: bool = False
         self.macro_bottom: list[str] = []
@@ -174,6 +175,11 @@ class MacroLoadingState():
         self.macro_end: str | None = None
         self.macro_opener: str = macro_opener
         self.complex_macro: bool = False
+        self.currently_macro_top: bool = True
+        self.macro_generator_start: int = 0
+        self.file: str = file
+        self.macro_generator_lang: str = ""
+        self.macro_start_line_no = macro_start_line_no
 
 
 class RegexCache:

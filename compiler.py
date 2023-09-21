@@ -1,4 +1,5 @@
 import glob
+import importlib
 import inspect
 import os
 import pathlib
@@ -750,13 +751,10 @@ def call_language_handler(curr_compile_lines: list[str], curr_compile_lines_labe
                           rom_instructions: list[(int, int, int)],
                           rom_instructions_label: list[(int | str, int | None, int | None)],
                           args: CompilerArgs) -> CompilerResult:
-    module = __import__(f"out_targets.{args.target_lang.upper()}")
+    module = importlib.import_module(f"out_targets.{args.target_lang.upper()}")
     if module is None:
         return CompilerResult.error(f"[ERROR] Cannot find language modul for language \"{args.target_lang}\"")
-    lang_module = getattr(module, args.target_lang.upper(), None)
-    if lang_module is None:
-        return CompilerResult.error(f"[ERROR] Language modul \"{args.target_lang}\" did not contain a handler class")
-    lang_class = getattr(lang_module, args.target_lang.upper(), None)
+    lang_class = getattr(module, args.target_lang.upper(), None)
     if lang_class is None:
         return CompilerResult.error(f"[ERROR] Language modul \"{args.target_lang}\" did not contain a handler class")
     lang_func = getattr(lang_class, f"{LanguageTarget.transpile.__name__}", None)
@@ -884,7 +882,7 @@ def resolve_variable_address_lookup(curr_compile_lines: list[str], variable_memo
 
 
 def load_all_modules_in_directory(path: pathlib.Path) -> list[ModuleType] | CompilerResult:
-    files = [pathlib.Path(file) for file in glob.glob(path.joinpath("*.py").name)]
+    files = [pathlib.Path(file) for file in glob.glob(str(path.joinpath("*.py")))]
     modules = []
     for f in files:
         if not f.is_file():
@@ -892,21 +890,27 @@ def load_all_modules_in_directory(path: pathlib.Path) -> list[ModuleType] | Comp
         if not f.suffix == ".py":
             continue
         try:
-            modules.append(__import__(f.name[:-3], locals(), globals()))
+            modules.append(importlib.import_module(f"{f.parent.name}.{f.name[:-3]}"))
         except ImportError as e:
-            return CompilerResult.error(f"Failed to import module \"{f.name[:-3]}\" with error \"{e}\"")
+            return CompilerResult.error(f"Failed to import module \"{f.parent.name}.{f.name[:-3]}\" with error \"{e}\"")
     return modules
 
 
 def load_macro_generators(macro_generators: dict[str, Type[MacroGenerator]]) -> CompilerResult:
-    modules = load_all_modules_in_directory(pathlib.Path(__file__).parent.joinpath("\\macro_generators"))
+    modules = load_all_modules_in_directory(COMPILER_FOLDER.joinpath("macro_generator_targets"))
     if isinstance(modules, CompilerResult):
         return modules
     for module in modules:
         for name, obj in inspect.getmembers(module):
             if inspect.isclass(obj):
                 if issubclass(obj, MacroGenerator):
-                    macro_generators[obj.get_target_language().lower()] = obj
+                    if obj == MacroGenerator:
+                        continue
+                    try:
+                        macro_generators[obj.get_target_language().lower()] = obj
+                    except Exception as e:
+                        return CompilerResult.error(f"Macro generator \"{name}\" did not have a target language"
+                                                    f" function or it threw a error details: {e}")
     return CompilerResult.ok()
 
 

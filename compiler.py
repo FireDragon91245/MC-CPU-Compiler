@@ -4,7 +4,7 @@ import os
 import pathlib
 
 from types import ModuleType
-from typing import Type
+from typing import Type, Match
 
 import regex
 
@@ -603,31 +603,7 @@ def resolve_macro(curr_compile_lines: list[str], line_no: int, macro: Macro, mac
     args = regex.match(macro_pattern, curr_compile_lines[line_no])
 
     if macro.complex_macro:
-        level = 0
-        macro_line_no = line_no
-        body: list[str] = []
-        while macro_line_no < len(curr_compile_lines) - 1:
-            macro_line_no = macro_line_no + 1
-            for curr_macro in macros:
-                if curr_macro.macro_closer == macro.macro_closer:
-                    if match_instruction(macro.macro_opener, curr_compile_lines[macro_line_no]):
-                        level = level + 1
-            if curr_compile_lines[macro_line_no] == macro.macro_closer:
-                if level > 0:
-                    level = level - 1
-                else:
-                    break
-            body.append(curr_compile_lines[macro_line_no])
-        del curr_compile_lines[line_no:macro_line_no + 1]
-        for i in reversed(range(0, len(macro.macro_bottom))):
-            curr_compile_lines.insert(line_no, resolve_args(macro.macro_bottom[i], args, macro, macro_id,
-                                                            variable_memory_pos))
-        for i in reversed(range(0, len(body))):
-            curr_compile_lines.insert(line_no, resolve_args(body[i], args, macro, macro_id, variable_memory_pos))
-        for i in reversed(range(0, len(macro.macro_top))):
-            curr_compile_lines.insert(line_no, resolve_args(macro.macro_top[i], args, macro, macro_id,
-                                                            variable_memory_pos))
-        return line_no + len(macro.macro_top) + len(body) + len(macro.macro_bottom)
+        return resolve_complex_macro(args, curr_compile_lines, line_no, macro, macro_id, macros, variable_memory_pos)
     else:
         del curr_compile_lines[line_no]
         for i in reversed(range(0, len(macro.macro_top))):
@@ -636,37 +612,58 @@ def resolve_macro(curr_compile_lines: list[str], line_no: int, macro: Macro, mac
         return line_no + len(macro.macro_top)
 
 
+def resolve_complex_macro(args: Match[str], curr_compile_lines: list[str], line_no: int, macro: Macro, macro_id: int,
+                          macros: list[Macro], variable_memory_pos: dict[str, int]) -> int:
+    level = 0
+    macro_line_no = line_no
+    body: list[str] = []
+    while macro_line_no < len(curr_compile_lines) - 1:
+        macro_line_no = macro_line_no + 1
+        for curr_macro in macros:
+            if curr_macro.macro_closer == macro.macro_closer:
+                if match_instruction(macro.macro_opener, curr_compile_lines[macro_line_no]):
+                    level = level + 1
+        if curr_compile_lines[macro_line_no] == macro.macro_closer:
+            if level > 0:
+                level = level - 1
+            else:
+                break
+        body.append(curr_compile_lines[macro_line_no])
+    del curr_compile_lines[line_no:macro_line_no + 1]
+    for i in reversed(range(0, len(macro.macro_bottom))):
+        curr_compile_lines.insert(line_no, resolve_args(macro.macro_bottom[i], args, macro, macro_id,
+                                                        variable_memory_pos))
+    for i in reversed(range(0, len(body))):
+        curr_compile_lines.insert(line_no, resolve_args(body[i], args, macro, macro_id, variable_memory_pos))
+    for i in reversed(range(0, len(macro.macro_top))):
+        curr_compile_lines.insert(line_no, resolve_args(macro.macro_top[i], args, macro, macro_id,
+                                                        variable_memory_pos))
+    return line_no + len(macro.macro_top) + len(body) + len(macro.macro_bottom)
+
+
 def resolve_macros(curr_compile_lines: list[str], macros: dict[int, Macro],
                    variable_memory_pos: dict[str, int]) -> CompilerResult:
-    for line_no in range(len(curr_compile_lines)):
-        found = False
-        if curr_compile_lines[line_no] == '':
+    for line_no, line in enumerate(curr_compile_lines):
+        if line == '':
             continue
         for macro_id, macro in macros.items():
-            if match_instruction(macro.macro_opener, curr_compile_lines[line_no]):
-                line_no = resolve_macro(curr_compile_lines, line_no, macro, macro_id, list(macros.values()),
-                                        variable_memory_pos)
-                if line_no == -1:
-                    assert False  # Unknown error or cause for line_no investigate if triggered
-                found = True
+            if match_instruction(macro.macro_opener, line):
+                resolve_macro(curr_compile_lines, line_no, macro, macro_id, list(macros.values()),
+                              variable_memory_pos)
                 break
-        if found:
-            continue
-        for inst in NATIVE_INSTRUCTIONS.keys():
-            if match_instruction(inst.lower(), curr_compile_lines[line_no]):
-                found = True
-                break
-        if found:
-            continue
-        if regex.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", curr_compile_lines[line_no]) is not None:
-            # excluded label declarations
-            continue
-        if curr_compile_lines[line_no].startswith("//"):
-            continue
-        if not found:
-            return CompilerResult.error(
-                f"[ERROR] can not resolve instruction \"{curr_compile_lines[line_no]}\" "
-                f"to any macro or std instruction")
+        else:
+            for inst in NATIVE_INSTRUCTIONS.keys():
+                if match_instruction(inst.lower(), line):
+                    break
+            else:
+                if regex.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", line) is not None:
+                    # excluded label declarations
+                    continue
+                if line.startswith("//"):
+                    continue
+                return CompilerResult.error(
+                    f"[ERROR] can not resolve instruction \"{line}\" "
+                    f"to any macro or std instruction")
     return CompilerResult.ok()
 
 
@@ -744,18 +741,8 @@ def instructions_to_rom(curr_compile_lines: list[str], rom_translation: list[(in
             continue
         if line.startswith('//'):
             continue
-        for inst, inst_id in NATIVE_INSTRUCTIONS.items():
-            if match_instruction(inst, line):
-                parts = line.split(' ')
-                if not add_rom_instruction(inst_id, parts, rom_translation):
-                    return CompilerResult.error(
-                        f"[ERROR] instruction \"{line}\" contains parts that can not be converted to rom instructions"
-                        f" (Probably compiler problem)")
-                break
-        else:
-            return CompilerResult.error(
-                f"[ERROR] Instruction \"{line}\" can not be resolved to a Native instruction after compiling,"
-                f" exiting! (Probably compiler problem)")
+        if (res := instruction_to_rom(line, rom_translation)) is not None:
+            return res
     return CompilerResult.ok()
 
 
@@ -790,6 +777,29 @@ def call_language_handler(curr_compile_lines: list[str], curr_compile_lines_labe
             f" Details: {e.__str__()}")
 
 
+def instruction_to_rom(line: str,
+                       rom_instructions_labels: list[(int | str, int | None, int | None)]) -> CompilerResult | None:
+    for inst, inst_id in NATIVE_INSTRUCTIONS.items():
+        if match_instruction(inst, line):
+            parts = line.replace('*', '').split(' ')
+            if inst.find("%label"):
+                if len(parts) > 2:
+                    rom_instructions_labels.append((inst_id, parts[1], parts[2]))
+                elif len(parts) > 1:
+                    rom_instructions_labels.append((inst_id, parts[1], 0))
+                else:
+                    rom_instructions_labels.append((inst_id, 0, 0))
+            else:
+                if not add_rom_instruction(inst_id, parts, rom_instructions_labels):
+                    return CompilerResult.error(
+                        f"[ERROR] instruction \"{line}\" contains parts that can not be converted to rom"
+                        f" instructions (Probably compiler problem)")
+            return None
+    return CompilerResult.error(
+        f"[ERROR] Instruction \"{line}\" can not be resolved to a Native instruction after compiling,"
+        f" exiting! (Probably compiler problem)")
+
+
 def instructions_to_rom_labels(curr_compile_lines_labels: list[str],
                                rom_instructions_labels: list[
                                    (int | str, int | None | str, int | None)]) -> CompilerResult:
@@ -803,26 +813,8 @@ def instructions_to_rom_labels(curr_compile_lines_labels: list[str],
         if m is not None:
             rom_instructions_labels.append((m, None, None))
             continue
-        for inst, inst_id in NATIVE_INSTRUCTIONS.items():
-            if match_instruction(inst, line):
-                parts = line.replace('*', '').split(' ')
-                if inst.find("%label"):
-                    if len(parts) > 2:
-                        rom_instructions_labels.append((inst_id, parts[1], parts[2]))
-                    elif len(parts) > 1:
-                        rom_instructions_labels.append((inst_id, parts[1], 0))
-                    else:
-                        rom_instructions_labels.append((inst_id, 0, 0))
-                else:
-                    if not add_rom_instruction(inst_id, parts, rom_instructions_labels):
-                        return CompilerResult.error(
-                            f"[ERROR] instruction \"{line}\" contains parts that can not be converted to rom"
-                            f" instructions (Probably compiler problem)")
-                break
-        else:
-            return CompilerResult.error(
-                f"[ERROR] Instruction \"{line}\" can not be resolved to a Native instruction after compiling,"
-                " exiting!")
+        if (res := instruction_to_rom(line, rom_instructions_labels)) is not None:
+            return res
     return CompilerResult.ok()
 
 

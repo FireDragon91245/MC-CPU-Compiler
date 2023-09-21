@@ -3,6 +3,7 @@ import importlib
 import inspect
 import os
 import pathlib
+import hashlib
 
 from types import ModuleType
 from typing import Type, Match
@@ -427,6 +428,12 @@ def get_macro_arg_types(macro_state: MacroLoadingState) -> list[MacroTypes] | Co
     return macro_types
 
 
+def num_hash(s: str) -> int:
+    algorithm = hashlib.sha256()
+    algorithm.update(s.encode())
+    return int.from_bytes(algorithm.digest(), "big")
+
+
 def create_macro_instance(state: MacroLoadingState, macros: dict[int, Macro],
                           line_no: int) -> CompilerResult | None:
     if state.complex_macro:
@@ -434,19 +441,19 @@ def create_macro_instance(state: MacroLoadingState, macros: dict[int, Macro],
             return CompilerResult.error(f"[ERROR] Complex macros (macros using \"...\") need to have "
                                         f"a closing expression error at #endmacro in file \"{state.file}\" "
                                         f"at line <{line_no}>")
-        macros[abs(hash(state.macro_opener))] = Macro(state.macro_opener, state.macro_end, state.macro_args,
-                                                      state.macro_top, state.macro_bottom, state.complex_macro,
-                                                      state.generated_macro, state.macro_generator)
+        macros[num_hash(state.macro_opener)] = Macro(state.macro_opener, state.macro_end, state.macro_args,
+                                                     state.macro_top, state.macro_bottom, state.complex_macro,
+                                                     state.generated_macro, state.macro_generator)
     else:
         if state.macro_end is None:
-            macros[abs(hash(state.macro_opener))] = Macro(state.macro_opener, "", state.macro_args, state.macro_top,
-                                                          state.macro_bottom, state.complex_macro,
-                                                          state.generated_macro,
-                                                          state.macro_generator)
+            macros[num_hash(state.macro_opener)] = Macro(state.macro_opener, "", state.macro_args, state.macro_top,
+                                                         state.macro_bottom, state.complex_macro,
+                                                         state.generated_macro,
+                                                         state.macro_generator)
         else:
-            macros[abs(hash(state.macro_opener))] = Macro(state.macro_opener, state.macro_end, state.macro_args,
-                                                          state.macro_top, state.macro_bottom, state.complex_macro,
-                                                          state.generated_macro, state.macro_generator)
+            macros[num_hash(state.macro_opener)] = Macro(state.macro_opener, state.macro_end, state.macro_args,
+                                                         state.macro_top, state.macro_bottom, state.complex_macro,
+                                                         state.generated_macro, state.macro_generator)
 
 
 def load_macro_generator(macro_state: MacroLoadingState, lines_iter: enumerate[str],

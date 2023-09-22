@@ -3,7 +3,8 @@ import os
 import argparse
 
 import compiler
-from compiler_obj import CompilerArgs, CompilerErrorLevels
+from objects.CompilerErrorLevels import CompilerErrorLevels
+from objects.CompilerArgs import CompilerArgs
 
 
 def list_format(to_format: list):

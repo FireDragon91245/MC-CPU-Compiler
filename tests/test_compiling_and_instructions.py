@@ -1,6 +1,7 @@
 import unittest
 from compiler import NATIVE_INSTRUCTIONS, match_instruction, compile_file
-from compiler_obj import CompilerArgs, CompilerErrorLevels
+from objects.CompilerErrorLevels import CompilerErrorLevels
+from objects.CompilerArgs import CompilerArgs
 from test_data import EXAMPLE_STD_INSTRUCTIONS
 import glob
 import os

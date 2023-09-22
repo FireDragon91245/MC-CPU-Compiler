@@ -10,8 +10,15 @@ from typing import Type, Match
 
 import regex
 
-from compiler_obj import MacroTypes, Macro, CompilerArgs, CompilerResult, CompilerErrorLevels, LanguageTarget, \
-    MacroGenerator, MacroLoadingState, RegexCache
+from objects.CompilerErrorLevels import CompilerErrorLevels
+from objects.MacroTypes import MacroTypes
+from objects.MacroGenerator import MacroGenerator
+from objects.RegexCache import RegexCache
+from objects.MacroLoadingState import MacroLoadingState
+from objects.LanguageTarget import LanguageTarget
+from objects.CompilerResult import CompilerResult
+from objects.CompilerArgs import CompilerArgs
+from objects.Macro import Macro
 
 # %number can be equal to %label, only the compiler deals with %label & %variable and is resolved to %number at
 # compile time
@@ -443,17 +450,20 @@ def create_macro_instance(state: MacroLoadingState, macros: dict[int, Macro],
                                         f"at line <{line_no}>")
         macros[num_hash(state.macro_opener)] = Macro(state.macro_opener, state.macro_end, state.macro_args,
                                                      state.macro_top, state.macro_bottom, state.complex_macro,
-                                                     state.generated_macro, state.macro_generator)
+                                                     state.generated_macro, state.macro_generator, state.file,
+                                                     state.macro_start_line_no)
     else:
         if state.macro_end is None:
             macros[num_hash(state.macro_opener)] = Macro(state.macro_opener, "", state.macro_args, state.macro_top,
                                                          state.macro_bottom, state.complex_macro,
                                                          state.generated_macro,
-                                                         state.macro_generator)
+                                                         state.macro_generator, state.file,
+                                                         state.macro_start_line_no)
         else:
             macros[num_hash(state.macro_opener)] = Macro(state.macro_opener, state.macro_end, state.macro_args,
                                                          state.macro_top, state.macro_bottom, state.complex_macro,
-                                                         state.generated_macro, state.macro_generator)
+                                                         state.generated_macro, state.macro_generator, state.file,
+                                                         state.macro_start_line_no)
 
 
 def load_macro_generator(macro_state: MacroLoadingState, lines_iter: enumerate[str],
@@ -603,25 +613,34 @@ def escape_instruction(inst: str) -> str:
 
 
 def resolve_macro(curr_compile_lines: list[str], line_no: int, macro: Macro, macro_id: int, macros: list[Macro],
-                  variable_memory_pos: dict[str, int]) -> int:
+                  variable_memory_pos: dict[str, int], cmp_args: CompilerArgs) -> CompilerResult:
     macro.macro_no = macro.macro_no + 1
     macro_pattern = escape_instruction(macro.macro_opener)
     for t, repl in TYPE_REGEX_MATCH_REPLACERS.items():
         macro_pattern = macro_pattern.replace(t, repl)
     args = regex.match(macro_pattern, curr_compile_lines[line_no])
 
+    if macro.generated_macro:
+        try:
+            if (res := macro.macro_generator.use_generator(cmp_args, macro,
+                                                           list(args.groups()))).status != CompilerErrorLevels.OK:
+                return res
+        except Exception as e:
+            return CompilerResult.error(f"[ERROR] Error in macro generator for macro \"{macro.macro_opener}\" "
+                                        f"in file \"{macro.file}\" at line <{macro.macro_start_line_no}> "
+                                        f"with message \"{e}\"")
     if macro.complex_macro:
-        return resolve_complex_macro(args, curr_compile_lines, line_no, macro, macro_id, macros, variable_memory_pos)
+        resolve_complex_macro(args, curr_compile_lines, line_no, macro, macro_id, macros, variable_memory_pos)
     else:
         del curr_compile_lines[line_no]
         for i in reversed(range(0, len(macro.macro_top))):
             curr_compile_lines.insert(line_no, resolve_args(macro.macro_top[i], args, macro, macro_id,
                                                             variable_memory_pos))
-        return line_no + len(macro.macro_top)
+    return CompilerResult.ok()
 
 
 def resolve_complex_macro(args: Match[str], curr_compile_lines: list[str], line_no: int, macro: Macro, macro_id: int,
-                          macros: list[Macro], variable_memory_pos: dict[str, int]) -> int:
+                          macros: list[Macro], variable_memory_pos: dict[str, int]) -> None:
     level = 0
     macro_line_no = line_no
     body: list[str] = []
@@ -646,18 +665,18 @@ def resolve_complex_macro(args: Match[str], curr_compile_lines: list[str], line_
     for i in reversed(range(0, len(macro.macro_top))):
         curr_compile_lines.insert(line_no, resolve_args(macro.macro_top[i], args, macro, macro_id,
                                                         variable_memory_pos))
-    return line_no + len(macro.macro_top) + len(body) + len(macro.macro_bottom)
 
 
 def resolve_macros(curr_compile_lines: list[str], macros: dict[int, Macro],
-                   variable_memory_pos: dict[str, int]) -> CompilerResult:
+                   variable_memory_pos: dict[str, int], cmp_args: CompilerArgs) -> CompilerResult:
     for line_no, line in enumerate(curr_compile_lines):
         if line == '':
             continue
         for macro_id, macro in macros.items():
             if match_instruction(macro.macro_opener, line):
-                resolve_macro(curr_compile_lines, line_no, macro, macro_id, list(macros.values()),
-                              variable_memory_pos)
+                if (res := resolve_macro(curr_compile_lines, line_no, macro, macro_id, list(macros.values()),
+                                         variable_memory_pos, cmp_args)).status != CompilerErrorLevels.OK:
+                    return res
                 break
         else:
             for inst in NATIVE_INSTRUCTIONS.keys():
@@ -977,7 +996,7 @@ def compile_file(file_path: str, args: CompilerArgs) -> CompilerResult:
     while not is_only_native_instructions(curr_compile_lines):
         curr_depth = curr_depth + 1
         if handle_error(result.accumulate(
-                resolve_macros(curr_compile_lines, macros, variable_memory_pos)), args) is not None:
+                resolve_macros(curr_compile_lines, macros, variable_memory_pos, args)), args) is not None:
             return result
         if curr_depth >= depth_limit:
             if handle_error(result.accumulate(CompilerResult.error(

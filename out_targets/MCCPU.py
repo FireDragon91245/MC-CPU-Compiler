@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from compiler_obj import LanguageTarget, CompilerArgs, CompilerResult
+from objects.LanguageTarget import LanguageTarget
+from objects.CompilerResult import CompilerResult
+from objects.CompilerArgs import CompilerArgs
 
 
 class MCCPU(LanguageTarget):

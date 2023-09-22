@@ -1,4 +1,7 @@
-from compiler_obj import MacroGenerator, Macro, CompilerArgs, CompilerResult
+from objects.MacroGenerator import MacroGenerator
+from objects.CompilerResult import CompilerResult
+from objects.CompilerArgs import CompilerArgs
+from objects.Macro import Macro
 import lupa.lua54 as lupa
 
 

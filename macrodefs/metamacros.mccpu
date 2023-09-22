@@ -1,0 +1,24 @@
+#macro repeat %number, %string
+    #macrogenerator lua
+        local gen = {}
+
+        function gen:onAfterMacroLoad(compiler, macro)
+        end
+
+        function gen:onMacroUse(compiler, macro, args)
+            local number = args[1]
+            local string = args[2]
+
+            macro.clear_macro_top()
+            for i = 1, number do
+                local line = string:gsub("%%__i", i)
+                print(line)
+                macro.add_macro_top(line)
+            end
+
+            return compiler.ok()
+        end
+
+        return gen
+    #endmacrogenerator
+#endmacro

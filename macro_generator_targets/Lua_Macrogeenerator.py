@@ -28,6 +28,10 @@ class LuaMacroGeneratorArgsWrapper:
         return self.macro_args_value[item - 1]
 
 
+def prep_line(line: str) -> str:
+    return line.replace("#comment", "//")
+
+
 class LuaMacroGeneratorMacroWrapper:
     def __init__(self, macro: Macro):
         self.macro = macro
@@ -54,10 +58,14 @@ class LuaMacroGeneratorMacroWrapper:
         self.macro.macro_bottom = []
 
     def add_macro_top(self, line: str):
-        self.macro.macro_top.append(line)
+        if line.find("//") != -1:
+            return
+        self.macro.macro_top.append(prep_line(line))
 
     def add_macro_bottom(self, line: str):
-        self.macro.macro_bottom.append(line)
+        if line.find("//") != -1:
+            return
+        self.macro.macro_bottom.append(prep_line(line))
 
 
 class LuaMacroGeneratorCompilerWrapper:

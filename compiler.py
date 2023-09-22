@@ -362,8 +362,8 @@ def find_var_static_auto_all(line_enumerate: enumerate[str], variables: dict[str
 
 def handle_std_macro_files(match: str, line_no: int, line: str,
                            imported_files: dict[str, list[str]]) -> CompilerResult | None:
-    if COMPILER_FOLDER.joinpath(f"/macrodefs/{match}.mccpu").is_file():
-        file = open(COMPILER_FOLDER.joinpath(f"/macrodefs/{match}.mccpu"), "rt")
+    if COMPILER_FOLDER.joinpath(f"macrodefs/{match}.mccpu").is_file():
+        file = open(COMPILER_FOLDER.joinpath(f"macrodefs/{match}.mccpu"), "rt")
         if not file.readable():
             return CompilerResult.error(
                 f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value "
@@ -371,8 +371,9 @@ def handle_std_macro_files(match: str, line_no: int, line: str,
         if imported_files.get(match) is not None:
             return None
         imported_files[match] = read_lines(file)
+        file.close()
         return get_imported_files(imported_files, imported_files.get(match),
-                                  COMPILER_FOLDER.joinpath(f"/macrodefs/{match}.mccpu").name)
+                                  COMPILER_FOLDER.joinpath(f"macrodefs/{match}.mccpu").name)
     return None
 
 
@@ -395,7 +396,7 @@ def get_imported_files(imported_files, lines, file) -> CompilerResult:
     for line_no, line in enumerate(lines):
         if line.startswith('#'):
             if line.find("includemacrofile") != -1:
-                matches: list[str] = list(REGEX_CACHE.get_by_name("include_match").match(line).groups())
+                matches: list[str] = REGEX_CACHE.get_by_name("include_match").findall(line)
                 for match in matches:
                     if (res := handle_std_macro_files(match, line_no, line, imported_files)) is not None:
                         return res
@@ -403,7 +404,7 @@ def get_imported_files(imported_files, lines, file) -> CompilerResult:
                         return res
                     else:
                         return CompilerResult.error(
-                            f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file.name}\" with value "
+                            f"[ERROR] #Includemacrofile on line <{line_no}> in file \"{file}\" with value "
                             f"\"{line}\" was not found exiting!")
     return CompilerResult.ok()
 

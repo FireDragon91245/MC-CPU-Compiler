@@ -17,3 +17,4 @@ class MacroLoadingState:
         self.file: str = file
         self.macro_generator_lang: str = ""
         self.macro_start_line_no = macro_start_line_no
+        self.macro_id: int | None = None

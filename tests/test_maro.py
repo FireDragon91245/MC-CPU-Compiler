@@ -47,7 +47,7 @@ class MacroTests(unittest.TestCase):
             "mov %1, 0x00",
             "#endmacro"
         ]
-        res = load_macros(macros, "tests", lines, {})
+        res = load_macros(macros, "tests", lines, {}, EXAMPLE_COMP_ARGS)
         self.assertEqual(res.status, CompilerErrorLevels.OK, str(res))
         self.assertEqual(len(macros), 1, "no macros were loaded")
         self.assertTrue(macros[list(macros.keys())[-1]].__cmp__(

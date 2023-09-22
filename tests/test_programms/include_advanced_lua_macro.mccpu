@@ -1,0 +1,7 @@
+#includemacrofile <metamacros>
+
+#memorylayout auto static incremental
+#endmemorylayout
+
+repeat 10, "add &r1, %__i"
+repeat 10, "#comment %__macro_id"

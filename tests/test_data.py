@@ -1,3 +1,6 @@
+from objects.CompilerArgs import CompilerArgs
+from objects.CompilerErrorLevels import CompilerErrorLevels
+
 EXAMPLE_STD_INSTRUCTIONS = [
     "add &r0, &r0",
     "add &r0, [&r0]",
@@ -217,3 +220,5 @@ EXAMPLE_STD_INSTRUCTIONS = [
     "nop",
     "halt",
 ]
+
+EXAMPLE_COMP_ARGS: CompilerArgs = CompilerArgs("MCCPU", 256, 8, 64, 16, CompilerErrorLevels.WARNING, "test")

@@ -251,7 +251,9 @@ TYPE_REGEX_MATCH_REPLACERS = {
     "%string": r"(\"((?>[^\"\"]+|(?1))*)\")"
 }
 
-REGEX_CACHE: RegexCache = RegexCache()
+REGEX_CACHE: RegexCache = RegexCache(**TYPE_REGEX_MATCH_REPLACERS, type_reg=r"%[a-zA-Z]*",
+                                     re_var=r"\*([a-zA-Z][a-zA-Z0-9]*)", lbl_reg=r"([a-zA-Z][a-zA-Z0-9_-]+):",
+                                     register_num_reg=r"&r([0-9]{1,3})|$")
 WORKING_DIR = pathlib.Path(os.getcwd())
 COMPILER_FOLDER = pathlib.Path(__file__).parent
 
@@ -346,14 +348,12 @@ def find_var_static_all(line_enumerate: enumerate[str], variables: dict[str, int
 
 def find_var_static_auto_all(line_enumerate: enumerate[str], variables: dict[str, int], balanced: bool,
                              args: CompilerArgs) -> CompilerResult:
-    re_var = r"\*([a-zA-Z][a-zA-Z0-9]*)"
-    re_var_comp = regex.compile(re_var)
     var_count = 0
     while True:
         line_no, line = next(line_enumerate, (None, None))
         if line is None:
             return CompilerResult.ok()
-        matches = re_var_comp.findall(line)
+        matches = REGEX_CACHE.get_by_name("re_var").findall(line)
         for match in matches:
             if variables.get(match) is None:
                 variables[match] = next_memory_address(var_count, args.memory_blocks, balanced, args.mem_size)
@@ -395,7 +395,7 @@ def get_imported_files(imported_files, lines, file) -> CompilerResult:
     for line_no, line in enumerate(lines):
         if line.startswith('#'):
             if line.find("includemacrofile") != -1:
-                matches: list[str] = regex.findall(REGEX_CACHE.get_by_name("include_match").include_match, line)
+                matches: list[str] = list(REGEX_CACHE.get_by_name("include_match").match(line).groups())
                 for match in matches:
                     if (res := handle_std_macro_files(match, line_no, line, imported_files)) is not None:
                         return res
@@ -409,8 +409,7 @@ def get_imported_files(imported_files, lines, file) -> CompilerResult:
 
 
 def get_macro_arg_types(macro_state: MacroLoadingState) -> list[MacroTypes] | CompilerResult:
-    type_reg = r"%[a-zA-Z]*"
-    matches: list[str] = regex.findall(type_reg, macro_state.macro_opener)
+    matches: list[str] = REGEX_CACHE.get_by_name("type_reg").findall(macro_state.macro_opener)
     macro_types: list[MacroTypes] = []
     for match in matches:
         if match == "%label":
@@ -587,7 +586,7 @@ def is_only_native_instructions(curr_compile_lines: list[str]):
             continue
         if line.startswith("//"):
             continue
-        if regex.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", line) is not None:
+        if REGEX_CACHE.get_by_name("lbl_reg").match(line) is not None:
             continue
         found = False
         for inst in NATIVE_INSTRUCTIONS.keys():
@@ -683,7 +682,7 @@ def resolve_macros(curr_compile_lines: list[str], macros: dict[int, Macro],
                 if match_instruction(inst.lower(), line):
                     break
             else:
-                if regex.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", line) is not None:
+                if REGEX_CACHE.get_by_name("lbl_reg").match(line) is not None:
                     # excluded label declarations
                     continue
                 if line.startswith("//"):
@@ -728,8 +727,6 @@ def resolve_labels(curr_compile_lines: list[str]) -> bool:
     curr = 0
     max_iter = 1000
     finished = False
-    label_re = r"([a-zA-Z][a-zA-Z0-9_-]+):"
-    label_re_comp = regex.compile(label_re)
 
     while curr < max_iter and not finished:
         curr = curr + 1
@@ -739,7 +736,7 @@ def resolve_labels(curr_compile_lines: list[str]) -> bool:
             if curr_compile_lines[line_no].startswith('//') or curr_compile_lines[line_no] == '':
                 continue
             instruction_no = instruction_no + 1
-            matches = label_re_comp.match(curr_compile_lines[line_no])
+            matches = REGEX_CACHE.get_by_name("lbl_reg").match(curr_compile_lines[line_no])
             if matches is not None:
                 if len(matches.groups()) > 0:
                     found = True
@@ -828,7 +825,7 @@ def instructions_to_rom_labels(curr_compile_lines_labels: list[str],
                                rom_instructions_labels: list[
                                    (int | str, int | None | str, int | None)]) -> CompilerResult:
     for line in curr_compile_lines_labels:
-        m = regex.match(r"[a-zA-Z][a-zA-Z0-9_-]+:", line)
+        m = REGEX_CACHE.get_by_name("lbl_reg").match(line)
         if line == '':
             continue
         if line.startswith('//'):
@@ -847,19 +844,19 @@ def num_to_int(param: str) -> int:
 
 
 def register_to_int(param: str) -> int:
-    return int(regex.findall(r"&r([0-9]{1,3})|$", param)[0])
+    return int(REGEX_CACHE.get_by_name("register_num_reg").match(param).groups()[0])
 
 
 def inst_arg_to_rom(param: str) -> int | str:
-    if (match := regex.match(TYPE_REGEX_MATCH_REPLACERS["%number"], param)) is not None:
+    if (match := REGEX_CACHE.get_by_name("%number").match(param)) is not None:
         return num_to_int(match.group(1))
-    elif (match := regex.match(TYPE_REGEX_MATCH_REPLACERS["%register"], param)) is not None:
+    elif (match := REGEX_CACHE.get_by_name("%register").match(param)) is not None:
         return register_to_int(match.group(1))
-    elif (match := regex.match(TYPE_REGEX_MATCH_REPLACERS["%address"], param)) is not None:
+    elif (match := REGEX_CACHE.get_by_name("%address").match(param)) is not None:
         return num_to_int(match.group(1).replace("*", ""))
-    elif (match := regex.match(TYPE_REGEX_MATCH_REPLACERS["%registerpointer"], param)) is not None:
+    elif (match := REGEX_CACHE.get_by_name("%registerpointer").match(param)) is not None:
         return register_to_int(match.group(1))
-    elif (match := regex.match(TYPE_REGEX_MATCH_REPLACERS["%label"], param)) is not None:
+    elif (match := REGEX_CACHE.get_by_name("%label").match(param)) is not None:
         return match.group(1)
     else:
         return -1

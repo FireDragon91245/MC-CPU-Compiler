@@ -7,7 +7,7 @@ class RegexCache:
         self.key_pattern = key_pattern
         self.cache = {}
 
-    def get_by_name(self, name):
+    def get_by_name(self, name) -> regex.Pattern:
         if name not in self.cache:
             self.cache[name] = regex.compile(self.key_pattern[name])
         return self.cache[name]

@@ -51,7 +51,7 @@ class MacroTests(unittest.TestCase):
         self.assertEqual(res.status, CompilerErrorLevels.OK, str(res))
         self.assertEqual(len(macros), 1, "no macros were loaded")
         self.assertTrue(macros[list(macros.keys())[-1]].__cmp__(
-            Macro("zero %register", "", [MacroTypes.REGISTER], ["mov %1, 0x00"], [], False, False, None, "test", 0)),
+            Macro("zero %register", "", [MacroTypes.REGISTER], ["mov %1, 0x00"], [], False, False, None, "tests", 0)),
                         "macro loading error, wrong macro loaded")
 
     def test_exclude_comp_instr(self):

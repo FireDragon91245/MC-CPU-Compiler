@@ -1,7 +1,7 @@
 from enum import Enum
 
 
-class MacroTypes(Enum):
+class ArgumentTypes(Enum):
     LABEL = 1
     VARIABLE = 2
     MEMORY_ADDRESS = 3

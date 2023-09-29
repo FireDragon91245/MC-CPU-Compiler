@@ -1,5 +1,5 @@
 import unittest
-from compiler import NATIVE_INSTRUCTIONS, match_instruction, compile_file
+from compiler import NATIVE_INSTRUCTIONS, match_instruction_old, compile_file
 from objects.CompilerErrorLevels import CompilerErrorLevels
 from objects.CompilerArgs import CompilerArgs
 from test_data import EXAMPLE_STD_INSTRUCTIONS
@@ -9,11 +9,11 @@ import os
 
 class InstructionTest(unittest.TestCase):
     def test_match_instructions(self):
-        self.assertTrue(any(list(match_instruction(x, x) for x in NATIVE_INSTRUCTIONS)))
+        self.assertTrue(any(list(match_instruction_old(x, x) for x in NATIVE_INSTRUCTIONS)))
 
     def test_match_instructions_example(self):
         for instruction in EXAMPLE_STD_INSTRUCTIONS:
-            self.assertTrue(any(list(match_instruction(x, instruction) for x in NATIVE_INSTRUCTIONS)),
+            self.assertTrue(any(list(match_instruction_old(x, instruction) for x in NATIVE_INSTRUCTIONS)),
                             f"Failed to match instruction: {instruction} to any native instruction")
 
     def test_example_programms(self):

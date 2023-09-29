@@ -1,10 +1,10 @@
 from objects.MacroGenerator import MacroGenerator
-from objects.MacroTypes import MacroTypes
+from objects.ArgumentTypes import ArgumentTypes
 
 
 class Macro:
 
-    def __init__(self, macro_opener: str, macro_closer: str, macro_args: list[MacroTypes], macro_top: list[str],
+    def __init__(self, macro_opener: str, macro_closer: str, macro_args: list[ArgumentTypes], macro_top: list[str],
                  macro_bottom: list[str], complex_macro: bool, generated_macro: bool,
                  macro_generator: MacroGenerator | None, file: str, macro_start_line_no: int) -> None:
         self.macro_start_line_no = macro_start_line_no

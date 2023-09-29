@@ -11,7 +11,7 @@ from typing import Type, Match
 import regex
 
 from objects.CompilerErrorLevels import CompilerErrorLevels
-from objects.MacroTypes import MacroTypes
+from objects.ArgumentTypes import ArgumentTypes
 from objects.MacroGenerator import MacroGenerator
 from objects.RegexCache import RegexCache
 from objects.MacroLoadingState import MacroLoadingState
@@ -258,6 +258,10 @@ WORKING_DIR = pathlib.Path(os.getcwd())
 COMPILER_FOLDER = pathlib.Path(__file__).parent
 
 
+def match_instruction(inst: str, line: str) -> bool:
+    pass
+
+
 def read_lines(file):
     return file.read().splitlines()
 
@@ -409,24 +413,24 @@ def get_imported_files(imported_files, lines, file) -> CompilerResult:
     return CompilerResult.ok()
 
 
-def get_macro_arg_types(macro_state: MacroLoadingState) -> list[MacroTypes] | CompilerResult:
+def get_macro_arg_types(macro_state: MacroLoadingState) -> list[ArgumentTypes] | CompilerResult:
     matches: list[str] = REGEX_CACHE.get_by_name("type_reg").findall(macro_state.macro_opener)
-    macro_types: list[MacroTypes] = []
+    macro_types: list[ArgumentTypes] = []
     for match in matches:
         if match == "%label":
-            macro_types.append(MacroTypes.LABEL)
+            macro_types.append(ArgumentTypes.LABEL)
         elif match == "%variable":
-            macro_types.append(MacroTypes.VARIABLE)
+            macro_types.append(ArgumentTypes.VARIABLE)
         elif match == "%address":
-            macro_types.append(MacroTypes.MEMORY_ADDRESS)
+            macro_types.append(ArgumentTypes.MEMORY_ADDRESS)
         elif match == "%number":
-            macro_types.append(MacroTypes.NUMBER)
+            macro_types.append(ArgumentTypes.NUMBER)
         elif match == "%register":
-            macro_types.append(MacroTypes.REGISTER)
+            macro_types.append(ArgumentTypes.REGISTER)
         elif match == "%registerpointer":
-            macro_types.append(MacroTypes.REGISTER_POINTER)
+            macro_types.append(ArgumentTypes.REGISTER_POINTER)
         elif match == "%string":
-            macro_types.append(MacroTypes.STRING)
+            macro_types.append(ArgumentTypes.STRING)
         else:
             return CompilerResult.error(
                 f"[ERROR] macro \"{macro_state.macro_opener}\" in file \"{macro_state.file}\" at line "
@@ -515,11 +519,11 @@ def handle_macro_end(line: str, macro_state: MacroLoadingState, macros: dict[int
         else:
             if macros[macro_state.macro_id].generated_macro:
                 return ((mac.macro_generator.load_generator(comp_args, mac) if
-                        (mac := macros[macro_state.macro_id]).macro_generator is not None
-                        else CompilerResult.error(
+                         (mac := macros[macro_state.macro_id]).macro_generator is not None
+                         else CompilerResult.error(
                     f"[ERROR] Macro \"{mac.macro_opener}\" in file \"{mac.file}\" at line <{mac.macro_start_line_no}>"
                     f" was determined to be a generated macro but no generator instance present")
-                        ) or CompilerResult.ok()).not_empty_or_ok()
+                         ) or CompilerResult.ok()).not_empty_or_ok()
             return CompilerResult.ok()
 
 
@@ -581,7 +585,7 @@ def load_macros(macros: dict[int, Macro], file, lines: list[str],
     return CompilerResult.ok()
 
 
-def match_instruction(inst: str, line: str) -> bool:
+def match_instruction_old(inst: str, line: str) -> bool:
     inst = escape_instruction(inst)
     for t, repl in TYPE_REGEX_MATCH_REPLACERS.items():
         inst = inst.replace(t, repl)
@@ -602,7 +606,7 @@ def is_only_native_instructions(curr_compile_lines: list[str]):
             continue
         found = False
         for inst in NATIVE_INSTRUCTIONS.keys():
-            if match_instruction(inst.lower(), line):
+            if match_instruction_old(inst.lower(), line):
                 found = True
                 break
         if not found:
@@ -659,7 +663,7 @@ def resolve_complex_macro(args: Match[str], curr_compile_lines: list[str], line_
         macro_line_no = macro_line_no + 1
         for curr_macro in macros:
             if curr_macro.macro_closer == macro.macro_closer:
-                if match_instruction(macro.macro_opener, curr_compile_lines[macro_line_no]):
+                if match_instruction_old(macro.macro_opener, curr_compile_lines[macro_line_no]):
                     level = level + 1
         if curr_compile_lines[macro_line_no] == macro.macro_closer:
             if level > 0:
@@ -684,14 +688,14 @@ def resolve_macros(curr_compile_lines: list[str], macros: dict[int, Macro],
         if line == '':
             continue
         for macro_id, macro in macros.items():
-            if match_instruction(macro.macro_opener, line):
+            if match_instruction_old(macro.macro_opener, line):
                 if (res := resolve_macro(curr_compile_lines, line_no, macro, macro_id, list(macros.values()),
                                          variable_memory_pos, cmp_args)).status != CompilerErrorLevels.OK:
                     return res
                 break
         else:
             for inst in NATIVE_INSTRUCTIONS.keys():
-                if match_instruction(inst.lower(), line):
+                if match_instruction_old(inst.lower(), line):
                     break
             else:
                 if REGEX_CACHE.get_by_name("lbl_reg").match(line) is not None:
@@ -813,7 +817,7 @@ def call_language_handler(curr_compile_lines: list[str], curr_compile_lines_labe
 def instruction_to_rom(line: str,
                        rom_instructions_labels: list[(int | str, int | None, int | None)]) -> CompilerResult | None:
     for inst, inst_id in NATIVE_INSTRUCTIONS.items():
-        if match_instruction(inst, line):
+        if match_instruction_old(inst, line):
             parts = line.replace('*', '').split(' ')
             if inst.find("%label"):
                 if len(parts) > 2:

@@ -1,4 +1,4 @@
-from objects.MacroTypes import MacroTypes
+from objects.ArgumentTypes import ArgumentTypes
 from objects.MacroGenerator import MacroGenerator
 
 
@@ -8,7 +8,7 @@ class MacroLoadingState:
         self.generated_macro: bool = False
         self.macro_bottom: list[str] = []
         self.macro_top: list[str] = []
-        self.macro_args: list[MacroTypes] = []
+        self.macro_args: list[ArgumentTypes] = []
         self.macro_end: str | None = None
         self.macro_opener: str = macro_opener
         self.complex_macro: bool = False

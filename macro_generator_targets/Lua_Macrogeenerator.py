@@ -1,7 +1,7 @@
 from objects.MacroGenerator import MacroGenerator
 from objects.CompilerResult import CompilerResult
 from objects.CompilerArgs import CompilerArgs
-from objects.MacroTypes import MacroTypes
+from objects.ArgumentTypes import ArgumentTypes
 from objects.Macro import Macro
 import lupa.lua54 as lupa
 
@@ -11,7 +11,7 @@ MACRO_USE_FUNC_NAME = "onMacroUse"
 
 
 class LuaMacroGeneratorArgsWrapper:
-    def __init__(self, macro_args_type: list[MacroTypes], macro_args_value: list[str]):
+    def __init__(self, macro_args_type: list[ArgumentTypes], macro_args_value: list[str]):
         self.macro_args_type = macro_args_type
         self.macro_args_value = macro_args_value
 

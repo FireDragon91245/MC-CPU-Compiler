@@ -1,12 +1,8 @@
-#memorylayout static auto incremental
-#endmemorylayout
-
-#macro repeat %number %string
+#macro repeat %number, %string
     #macrogenerator lua
         local gen = {}
 
-        function gen:onAfterMacroLoad(...)
-            print(...)
+        function gen:onAfterMacroLoad(compiler, macro)
         end
 
         function gen:onMacroUse(compiler, macro, args)
@@ -15,7 +11,9 @@
 
             macro.clear_macro_top()
             for i = 1, number do
-                macro.add_macro_top(string)
+                local line = string:gsub("%%__i", i)
+                print(line)
+                macro.add_macro_top(line)
             end
 
             return compiler.ok()
@@ -24,5 +22,3 @@
         return gen
     #endmacrogenerator
 #endmacro
-
-repeat 10 "add &r1, 1"

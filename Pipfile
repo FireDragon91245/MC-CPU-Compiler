@@ -4,9 +4,10 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-cython = "~=0.29.34"
-regex = "~=2023.8.8"
-lupa = "~=2.0"
+cython = "*"
+regex = "*"
+lupa = "*"
+flake8 = "*"
 
 [dev-packages]
 
